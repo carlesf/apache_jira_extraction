@@ -1,0 +1,15 @@
+# Extraction output (can reach several GB per project)
+extract_out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
