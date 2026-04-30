@@ -72,11 +72,11 @@ def get_link_added_at(issue: dict, target_key: str) -> str | None:
 
 
 def _sec_to_h(seconds) -> float | None:
-    """Convert Jira seconds integer to rounded hours, or None if not set."""
+    """Convert Jira seconds integer to hours, or None if not set."""
     if seconds is None:
         return None
     try:
-        return round(int(seconds) / 3600, 2)
+        return int(seconds) / 3600
     except (TypeError, ValueError):
         return None
 
