@@ -64,7 +64,7 @@ extract_out/
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.8.10+
 - `pip install requests`
 - ~1 GB free disk per project (raw JSON is verbose)
 - Stable internet; Step 3 is resumable if interrupted
