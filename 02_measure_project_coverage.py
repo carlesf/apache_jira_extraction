@@ -85,7 +85,7 @@ def discover_active_projects(all_keys: list[str], min_issues: int,
         total = get_count(jql, delay_s)
         if total >= min_issues:
             active.append((key, total))
-            marker = " ✓"
+            marker = " <--"
         else:
             marker = ""
         if i % 20 == 0 or total >= min_issues:
