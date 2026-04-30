@@ -90,15 +90,24 @@ not appear in the customfield map — that is expected.
 
 ## Step 2 — Measure Project Coverage
 
-Before committing to a full extraction, check how many requirement issues
-each candidate project has and how well they are described and linked.
+Rather than maintaining a hardcoded candidate list, the script discovers
+every project on the Apache Jira instance automatically and works in two
+phases.
 
 ```bash
-python 02_measure_project_coverage.py
+python 02_measure_project_coverage.py               # defaults
+python 02_measure_project_coverage.py --min-issues 50 --delay-ms 500
 ```
 
-This issues `maxResults=0` queries only (no issues are downloaded). For
-each of the 19 candidate projects it measures:
+**Phase 1 — Discovery.** Fetches the full project list from
+`/rest/api/2/project` (one API call), then issues one `maxResults=0` count
+query per project to check how many requirement issues it has in the
+2022–2025 window. Projects below `--min-issues` (default: 100) are dropped.
+At 400 ms per call and ~400 Apache projects this takes roughly 3 minutes.
+
+**Phase 2 — Coverage measurement.** For each project that survived Phase 1,
+three more count queries are issued (still `maxResults=0`, no issues
+downloaded):
 
 | Metric | Meaning |
 |--------|---------|
@@ -109,9 +118,15 @@ each of the 19 candidate projects it measures:
 
 Output: `extract_out/project_coverage.csv`, sorted by `Desc_Rate` descending.
 
+### Options
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--min-issues` | `100` | Minimum requirement issues to pass Phase 1 |
+| `--delay-ms` | `400` | Inter-request delay in milliseconds |
+
 **Selection rule of thumb:** `Desc_Rate >= 0.50 AND (Link_Rate >= 0.15 OR Comp_Rate >= 0.30)`.
-Pick three to five projects that clear this bar and have at least several
-hundred requirement issues.
+Pick three to five projects that clear this bar.
 
 ---
 
