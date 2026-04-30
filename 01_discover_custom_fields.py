@@ -7,6 +7,8 @@ Must be run once before any extraction or reconstruction.
 ----------------------------------------------------------------------------
 """
 
+from __future__ import annotations
+
 import json
 import os
 import sys
