@@ -123,14 +123,16 @@ def collect_children(parent: dict, child_index: dict[str, set[str]],
 
 def task_record(child: dict) -> dict:
     return {
-        "key":              child["key"],
-        "type":             child["type"],
-        "title":            child["title"],
-        "description":      child["description"],
-        "components":       child["components"],
-        "labels":           child["labels"],
-        "fix_versions":     child["fix_versions"],
-        "dependency_links": child["dependency_links"],
+        "key":                   child["key"],
+        "type":                  child["type"],
+        "title":                 child["title"],
+        "description":           child["description"],
+        "components":            child["components"],
+        "labels":                child["labels"],
+        "fix_versions":          child["fix_versions"],
+        "original_estimate_sec": child.get("original_estimate_sec"),
+        "time_spent_sec":        child.get("time_spent_sec"),
+        "dependency_links":      child["dependency_links"],
     }
 
 
