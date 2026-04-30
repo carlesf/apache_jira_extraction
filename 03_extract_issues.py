@@ -6,13 +6,16 @@ Main extraction. Two passes:
   2. For each key, fetch full issue + changelog, handling changelog pagination
      for issues with > 100 history entries.
 
+Only requirement-type issues are extracted (Story, New Feature, Improvement,
+Epic). Bugs and Tasks are excluded.
+
 Features:
   - Resumable via .checkpoint.txt
   - Exponential backoff on HTTP 429/5xx
   - One JSON file per issue (easy to inspect, easy to resume)
 
 Usage:
-  python 03_extract_issues.py --project SPARK --from-date 2018-01-01 --to-date 2024-01-01
+  python 03_extract_issues.py --project SPARK --from-date 2022-01-01 --to-date 2026-01-01
 ----------------------------------------------------------------------------
 """
 
@@ -26,7 +29,8 @@ from urllib.parse import quote
 import requests
 
 BASE_URL = "https://issues.apache.org/jira"
-TYPE_FILTER = 'issuetype in (Bug, Story, Task, "New Feature", Improvement, Epic)'
+# Requirement types only — no Bug, no Task
+TYPE_FILTER = 'issuetype in (Story, "New Feature", Improvement, Epic)'
 MAX_RETRIES = 5
 
 
@@ -148,10 +152,10 @@ def fetch_issue(key: str, out_dir: str, delay_s: float, logger: logging.Logger) 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Extract Jira issues for a project.")
+    parser = argparse.ArgumentParser(description="Extract Jira requirement issues for a project.")
     parser.add_argument("--project", required=True, help="Jira project key, e.g. SPARK")
-    parser.add_argument("--from-date", default="2018-01-01")
-    parser.add_argument("--to-date", default="2024-01-01")
+    parser.add_argument("--from-date", default="2022-01-01")
+    parser.add_argument("--to-date", default="2026-01-01", help="Exclusive upper bound (covers through end of 2025)")
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--delay-ms", type=int, default=400)
     args = parser.parse_args()

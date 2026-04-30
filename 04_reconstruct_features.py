@@ -5,10 +5,15 @@ Reads raw per-issue JSON files from extract_out/raw/<PROJECT>/ and produces:
   - extract_out/clean/<PROJECT>.jsonl         (one issue per line, final schema)
   - extract_out/clean/<PROJECT>.summary.csv   (population rates for sanity checks)
 
-Core rule: for time-varying fields (priority, story points, ...), the value
-at creation is the `fromString` of the oldest change-history entry for that
-field. If no history entry exists for the field, the current value IS the
-creation value.
+Output schema is oriented toward task-decomposition fine-tuning:
+  - Hierarchy  : parent_key (Epic or parent Story), subtasks
+  - Decomp     : dependency_links (blocks / depends-on relationships)
+  - Context    : title, description, components, labels, fix_versions
+  - Metadata   : key, project, type, created_at, resolved_at, status, priority
+
+Core rule: for time-varying fields (priority, ...), the value at creation is
+taken from the oldest changelog entry for that field. If no history entry
+exists the current value IS the creation value.
 
 Usage:
   python 04_reconstruct_features.py --project SPARK
@@ -18,7 +23,6 @@ Usage:
 import argparse
 import csv
 import glob
-import hashlib
 import json
 import os
 import sys
@@ -64,38 +68,21 @@ def get_link_added_at(issue: dict, target_key: str) -> str | None:
     return None
 
 
-def sha256_hex(value: str | None) -> str | None:
-    if not value:
-        return None
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-def process_issue(issue: dict, story_points_field: str | None, epic_link_field: str | None) -> dict:
+def process_issue(issue: dict, epic_link_field: str | None) -> dict:
     f = issue.get("fields", {})
 
     # Priority at creation.
     cur_priority = f.get("priority", {}).get("name") if f.get("priority") else None
     priority_at_creation = get_value_at_creation(issue, "priority", cur_priority)
 
-    # Story points (custom field).
-    story_points = None
-    if story_points_field:
-        cur_sp = f.get(story_points_field)
-        story_points = get_value_at_creation(issue, story_points_field, cur_sp)
-        if story_points is not None:
-            try:
-                story_points = float(story_points)
-            except (TypeError, ValueError):
-                pass
-
-    # Parent: subtask parent or Epic Link.
+    # Parent: subtask parent or Epic Link custom field.
     parent_key = None
     if f.get("parent"):
         parent_key = f["parent"].get("key")
     elif epic_link_field:
         parent_key = f.get(epic_link_field)
 
-    # Issue links.
+    # Issue links (blocks / depends-on / etc.).
     links: list[dict] = []
     for link in f.get("issuelinks", []):
         if link.get("outwardIssue"):
@@ -108,41 +95,34 @@ def process_issue(issue: dict, story_points_field: str | None, epic_link_field: 
             continue
         added_at = get_link_added_at(issue, target)
         links.append({
-            "type": link.get("type", {}).get("name"),
+            "type":      link.get("type", {}).get("name"),
             "direction": direction,
-            "target": target,
-            "added_at": added_at,
+            "target":    target,
+            "added_at":  added_at,
         })
 
-    subtasks = [st["key"] for st in f.get("subtasks", [])]
-    components = [c["name"] for c in f.get("components", [])]
-    labels = list(f.get("labels", []))
-    affects_versions = [v["name"] for v in f.get("versions", [])]
-
-    # Reporter anonymisation.
-    reporter_anon = None
-    reporter = f.get("reporter")
-    if reporter:
-        identity = reporter.get("accountId") or reporter.get("name")
-        reporter_anon = sha256_hex(identity)
+    subtasks    = [st["key"] for st in f.get("subtasks", [])]
+    components  = [c["name"] for c in f.get("components", [])]
+    labels      = list(f.get("labels", []))
+    fix_versions = [v["name"] for v in f.get("fixVersions", [])]
 
     return {
-        "key": issue.get("key"),
-        "project": f.get("project", {}).get("key"),
-        "created_at": f.get("created"),
-        "type": f.get("issuetype", {}).get("name") if f.get("issuetype") else None,
-        "title": f.get("summary"),
-        "description": f.get("description"),
-        "components": components,
-        "labels": labels,
-        "parent_key": parent_key,
-        "affects_versions": affects_versions,
-        "reporter_anon": reporter_anon,
+        "key":               issue.get("key"),
+        "project":           f.get("project", {}).get("key"),
+        "type":              f.get("issuetype", {}).get("name") if f.get("issuetype") else None,
+        "status":            f.get("status", {}).get("name") if f.get("status") else None,
+        "resolution":        f.get("resolution", {}).get("name") if f.get("resolution") else None,
+        "created_at":        f.get("created"),
+        "resolved_at":       f.get("resolutiondate"),
+        "title":             f.get("summary"),
+        "description":       f.get("description"),
         "priority_at_creation": priority_at_creation,
-        "story_points_planning": story_points,
-        "original_estimate_sec": f.get("timeoriginalestimate"),
-        "dependency_links": links,
-        "subtasks": subtasks,
+        "components":        components,
+        "labels":            labels,
+        "fix_versions":      fix_versions,
+        "parent_key":        parent_key,
+        "subtasks":          subtasks,
+        "dependency_links":  links,
     }
 
 
@@ -151,10 +131,10 @@ def main() -> None:
     parser.add_argument("--project", required=True, help="Jira project key, e.g. SPARK")
     args = parser.parse_args()
 
-    in_dir = f"./extract_out/raw/{args.project}"
-    clean_dir = "./extract_out/clean"
-    out_jsonl = os.path.join(clean_dir, f"{args.project}.jsonl")
-    out_summary = os.path.join(clean_dir, f"{args.project}.summary.csv")
+    in_dir       = f"./extract_out/raw/{args.project}"
+    clean_dir    = "./extract_out/clean"
+    out_jsonl    = os.path.join(clean_dir, f"{args.project}.jsonl")
+    out_summary  = os.path.join(clean_dir, f"{args.project}.summary.csv")
     field_map_path = "./extract_out/field_map.json"
 
     if not os.path.isdir(in_dir):
@@ -169,23 +149,21 @@ def main() -> None:
     with open(field_map_path, encoding="utf-8") as fh:
         field_map = json.load(fh)
 
-    story_points_field = field_map.get("Story Points")
     epic_link_field = field_map.get("Epic Link")
 
     raw_files = sorted(glob.glob(os.path.join(in_dir, "*.json")))
     print(f"Processing {len(raw_files)} issues from {in_dir} ...")
 
     stats = {
-        "total": 0,
-        "has_priority": 0,
-        "has_story_points": 0,
-        "has_original_estimate": 0,
-        "has_parent": 0,
-        "has_links": 0,
-        "has_subtasks": 0,
-        "has_components": 0,
-        "has_labels": 0,
+        "total":           0,
         "has_description": 0,
+        "has_components":  0,
+        "has_labels":      0,
+        "has_fix_versions": 0,
+        "has_parent":      0,
+        "has_subtasks":    0,
+        "has_links":       0,
+        "has_resolution":  0,
     }
 
     with open(out_jsonl, "w", encoding="utf-8") as out_fh:
@@ -193,27 +171,25 @@ def main() -> None:
             with open(filepath, encoding="utf-8") as fh:
                 issue = json.load(fh)
 
-            record = process_issue(issue, story_points_field, epic_link_field)
+            record = process_issue(issue, epic_link_field)
 
             stats["total"] += 1
-            if record["priority_at_creation"]:
-                stats["has_priority"] += 1
-            if record["story_points_planning"] is not None:
-                stats["has_story_points"] += 1
-            if record["original_estimate_sec"] is not None:
-                stats["has_original_estimate"] += 1
-            if record["parent_key"]:
-                stats["has_parent"] += 1
-            if record["dependency_links"]:
-                stats["has_links"] += 1
-            if record["subtasks"]:
-                stats["has_subtasks"] += 1
+            if record["description"]:
+                stats["has_description"] += 1
             if record["components"]:
                 stats["has_components"] += 1
             if record["labels"]:
                 stats["has_labels"] += 1
-            if record["description"]:
-                stats["has_description"] += 1
+            if record["fix_versions"]:
+                stats["has_fix_versions"] += 1
+            if record["parent_key"]:
+                stats["has_parent"] += 1
+            if record["subtasks"]:
+                stats["has_subtasks"] += 1
+            if record["dependency_links"]:
+                stats["has_links"] += 1
+            if record["resolution"]:
+                stats["has_resolution"] += 1
 
             out_fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -223,16 +199,15 @@ def main() -> None:
     # Summary CSV.
     total = float(stats["total"]) or 1.0
     summary_rows = [
-        {"Field": "total_issues",          "Count": stats["total"],                 "Rate": 1.0},
-        {"Field": "has_description",       "Count": stats["has_description"],       "Rate": round(stats["has_description"]       / total, 3)},
-        {"Field": "has_priority",          "Count": stats["has_priority"],          "Rate": round(stats["has_priority"]          / total, 3)},
-        {"Field": "has_story_points",      "Count": stats["has_story_points"],      "Rate": round(stats["has_story_points"]      / total, 3)},
-        {"Field": "has_original_estimate", "Count": stats["has_original_estimate"], "Rate": round(stats["has_original_estimate"] / total, 3)},
-        {"Field": "has_components",        "Count": stats["has_components"],        "Rate": round(stats["has_components"]        / total, 3)},
-        {"Field": "has_labels",            "Count": stats["has_labels"],            "Rate": round(stats["has_labels"]            / total, 3)},
-        {"Field": "has_parent",            "Count": stats["has_parent"],            "Rate": round(stats["has_parent"]            / total, 3)},
-        {"Field": "has_links",             "Count": stats["has_links"],             "Rate": round(stats["has_links"]             / total, 3)},
-        {"Field": "has_subtasks",          "Count": stats["has_subtasks"],          "Rate": round(stats["has_subtasks"]          / total, 3)},
+        {"Field": "total_issues",      "Count": stats["total"],            "Rate": 1.0},
+        {"Field": "has_description",   "Count": stats["has_description"],  "Rate": round(stats["has_description"]  / total, 3)},
+        {"Field": "has_components",    "Count": stats["has_components"],   "Rate": round(stats["has_components"]   / total, 3)},
+        {"Field": "has_labels",        "Count": stats["has_labels"],       "Rate": round(stats["has_labels"]       / total, 3)},
+        {"Field": "has_fix_versions",  "Count": stats["has_fix_versions"], "Rate": round(stats["has_fix_versions"] / total, 3)},
+        {"Field": "has_parent",        "Count": stats["has_parent"],       "Rate": round(stats["has_parent"]       / total, 3)},
+        {"Field": "has_subtasks",      "Count": stats["has_subtasks"],     "Rate": round(stats["has_subtasks"]     / total, 3)},
+        {"Field": "has_links",         "Count": stats["has_links"],        "Rate": round(stats["has_links"]        / total, 3)},
+        {"Field": "has_resolution",    "Count": stats["has_resolution"],   "Rate": round(stats["has_resolution"]   / total, 3)},
     ]
 
     with open(out_summary, "w", newline="", encoding="utf-8") as fh:

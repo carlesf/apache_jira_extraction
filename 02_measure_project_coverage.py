@@ -1,16 +1,19 @@
 """
 02_measure_project_coverage.py
 ----------------------------------------------------------------------------
-For each candidate project, compute:
-  - Total issues in the time window
-  - Fraction with Story Points populated  (SP_Rate)
-  - Fraction with Original Estimate populated (Est_Rate)
-  - Fraction with Blocks/Depends links (Link_Rate)
+For each candidate Apache project, compute coverage metrics relevant to
+training a task-decomposition model (requirement -> tasks):
+
+  - Total      : requirement-type issues in the 2022-2025 window
+  - Desc_Rate  : fraction with a non-empty description
+  - Comp_Rate  : fraction tagged with at least one component
+  - Link_Rate  : fraction with at least one issue link (proxy for decomposition)
 
 Uses maxResults=0 for every query: no issues are downloaded, only totals.
 Output: extract_out/project_coverage.csv
 
-Selection rule of thumb: SP_Rate >= 0.30 AND Link_Rate >= 0.10
+Selection rule of thumb:
+  Desc_Rate >= 0.50  AND  (Link_Rate >= 0.15  OR  Comp_Rate >= 0.30)
 ----------------------------------------------------------------------------
 """
 
@@ -26,15 +29,27 @@ OUT_DIR = "./extract_out"
 OUT_FILE = os.path.join(OUT_DIR, "project_coverage.csv")
 DELAY_S = 0.4
 
+# Active Apache projects 2022-2025
 CANDIDATES = [
+    # Core big-data processing
     "SPARK", "KAFKA", "FLINK", "BEAM", "AIRFLOW",
-    "CASSANDRA", "ARROW", "PULSAR", "HIVE", "HADOOP",
-    "HDFS", "HBASE", "LUCENE", "SOLR", "CALCITE",
+    # Storage / table formats
+    "CASSANDRA", "HBASE", "HUDI", "ICEBERG", "PARQUET",
+    # Search / analytical query
+    "LUCENE", "SOLR", "CALCITE", "DRUID",
+    # Messaging / integration
+    "PULSAR", "CAMEL", "NIFI",
+    # In-memory / columnar compute
+    "ARROW",
+    # Security / governance
+    "RANGER",
 ]
 
-FROM_DATE = "2018-01-01"
-TO_DATE = "2024-01-01"
-TYPE_FILTER = 'issuetype in (Bug, Story, Task, "New Feature", Improvement, Epic)'
+FROM_DATE = "2022-01-01"
+TO_DATE = "2026-01-01"   # exclusive upper bound, covers through end of 2025
+
+# Requirement-type issues only; excludes Bug and Task
+TYPE_FILTER = 'issuetype in (Story, "New Feature", Improvement, Epic)'
 
 
 def get_count(jql: str) -> int:
@@ -43,8 +58,7 @@ def get_count(jql: str) -> int:
     try:
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
-        data = resp.json()
-        return int(data.get("total", -1))
+        return int(resp.json().get("total", -1))
     except Exception:
         return -1
 
@@ -52,58 +66,60 @@ def get_count(jql: str) -> int:
 def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
 
-    print(f"Measuring coverage for {len(CANDIDATES)} projects in window {FROM_DATE} .. {TO_DATE}\n")
+    print(f"Measuring coverage for {len(CANDIDATES)} projects | window {FROM_DATE} .. {TO_DATE}\n")
+    print(f"{'Project':<12} {'Total':>7}  {'Desc':>6}  {'Comp':>6}  {'Link':>6}")
+    print("-" * 48)
 
     rows: list[dict] = []
     for project in CANDIDATES:
         base = (
-            f'project = {project} AND created >= "{FROM_DATE}" AND created < "{TO_DATE}"'
+            f'project = {project}'
+            f' AND created >= "{FROM_DATE}" AND created < "{TO_DATE}"'
             f" AND {TYPE_FILTER}"
         )
 
         total = get_count(base)
         time.sleep(DELAY_S)
-        sp = get_count(f'{base} AND "Story Points" is not EMPTY')
+        desc = get_count(f"{base} AND description is not EMPTY")
         time.sleep(DELAY_S)
-        est = get_count(f"{base} AND timeoriginalestimate is not EMPTY")
+        comp = get_count(f"{base} AND component is not EMPTY")
         time.sleep(DELAY_S)
-        links = get_count(
-            f'{base} AND issueLinkType in (Blocks, "is blocked by", Depends, "depends on")'
-        )
+        linked = get_count(f"{base} AND issuelinks is not EMPTY")
         time.sleep(DELAY_S)
 
-        sp_rate = round(sp / total, 3) if total > 0 else 0.0
-        est_rate = round(est / total, 3) if total > 0 else 0.0
-        link_rate = round(links / total, 3) if total > 0 else 0.0
+        desc_rate = round(desc / total, 3) if total > 0 else 0.0
+        comp_rate = round(comp / total, 3) if total > 0 else 0.0
+        link_rate = round(linked / total, 3) if total > 0 else 0.0
 
         rows.append({
-            "Project": project,
-            "Total": total,
-            "SP_Populated": sp,
-            "SP_Rate": sp_rate,
-            "Est_Populated": est,
-            "Est_Rate": est_rate,
-            "Linked": links,
-            "Link_Rate": link_rate,
+            "Project":    project,
+            "Total":      total,
+            "Desc":       desc,
+            "Desc_Rate":  desc_rate,
+            "Comp":       comp,
+            "Comp_Rate":  comp_rate,
+            "Linked":     linked,
+            "Link_Rate":  link_rate,
         })
 
         print(
-            f"  {project:<10} total={total:>7,}  "
-            f"sp={sp:>6,} ({sp_rate:>6.1%})  "
-            f"est={est:>6,} ({est_rate:>6.1%})  "
-            f"links={links:>6,} ({link_rate:>6.1%})"
+            f"  {project:<10} {total:>7,}  "
+            f"{desc_rate:>6.1%}  "
+            f"{comp_rate:>6.1%}  "
+            f"{link_rate:>6.1%}"
         )
 
-    rows.sort(key=lambda r: r["SP_Rate"], reverse=True)
+    # Sort by description rate descending (most informative first)
+    rows.sort(key=lambda r: (r["Desc_Rate"], r["Link_Rate"]), reverse=True)
 
-    fieldnames = ["Project", "Total", "SP_Populated", "SP_Rate", "Est_Populated", "Est_Rate", "Linked", "Link_Rate"]
+    fieldnames = ["Project", "Total", "Desc", "Desc_Rate", "Comp", "Comp_Rate", "Linked", "Link_Rate"]
     with open(OUT_FILE, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
 
     print(f"\nCoverage saved to {OUT_FILE}")
-    print("Selection rule of thumb: SP_Rate >= 0.30 AND Link_Rate >= 0.10")
+    print("Selection rule: Desc_Rate >= 0.50  AND  (Link_Rate >= 0.15  OR  Comp_Rate >= 0.30)")
 
 
 if __name__ == "__main__":

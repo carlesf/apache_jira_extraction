@@ -2,7 +2,7 @@
 01_discover_custom_fields.py
 ----------------------------------------------------------------------------
 Queries the Apache Jira REST API to map human-readable field names to their
-instance-specific IDs (e.g., "Story Points" -> "customfield_12310243").
+instance-specific IDs (e.g., "Epic Link" -> "customfield_12311120").
 Must be run once before any extraction or reconstruction.
 ----------------------------------------------------------------------------
 """
@@ -18,12 +18,8 @@ OUT_DIR = "./extract_out"
 OUT_FILE = os.path.join(OUT_DIR, "field_map.json")
 
 TARGET_NAMES = {
-    "Story Points",
     "Epic Link",
     "Epic Name",
-    "Sprint",
-    "Rank",
-    "Target Version",
     "Fix Version/s",
 }
 
