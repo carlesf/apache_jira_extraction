@@ -290,9 +290,8 @@ def main() -> None:
     print(f"Summary : {OUT_SUMMARY}")
 
     print("\nNOTE: Only children present in the clean index contribute to pairs.")
-    print("      Native Sub-task issues are not extracted by script 03.")
-    print("      Epic→Story pairs are fully supported; Story→Sub-task pairs")
-    print("      require re-running script 03 with Sub-task added to TYPE_FILTER.")
+    print("      Script 03 fetches subtasks automatically in Pass 2, so both")
+    print("      Epic->Story and Story->Sub-task hierarchies are supported.")
 
 
 if __name__ == "__main__":

@@ -1,13 +1,19 @@
 """
 03_extract_issues.py
 ----------------------------------------------------------------------------
-Main extraction. Two passes:
-  1. Enumerate all matching issue keys via paginated JQL search.
-  2. For each key, fetch full issue + changelog, handling changelog pagination
-     for issues with > 100 history entries.
+Extraction in two passes:
 
-Only requirement-type issues are extracted (Story, New Feature, Improvement,
-Epic). Bugs and Tasks are excluded.
+  Pass 1 — Requirements
+    Enumerates and fetches all requirement-type issues (Story, New Feature,
+    Improvement, Epic) for the project in the target time window.
+
+  Pass 2 — Child tasks
+    Scans every fetched requirement for subtask keys (from the `subtasks`
+    field) and fetches those child issues regardless of their type. This is
+    what populates the task side of the fine-tuning pairs built in step 5.
+
+The single checkpoint file covers both passes, so the script is fully
+resumable: rerunning the same command skips already-fetched keys.
 
 Features:
   - Resumable via .checkpoint.txt
@@ -15,11 +21,13 @@ Features:
   - One JSON file per issue (easy to inspect, easy to resume)
 
 Usage:
+  python 03_extract_issues.py --project SPARK
   python 03_extract_issues.py --project SPARK --from-date 2022-01-01 --to-date 2026-01-01
 ----------------------------------------------------------------------------
 """
 
 import argparse
+import glob
 import json
 import logging
 import os
@@ -29,7 +37,7 @@ from urllib.parse import quote
 import requests
 
 BASE_URL = "https://issues.apache.org/jira"
-# Requirement types only — no Bug, no Task
+# Requirement types only for Pass 1; Pass 2 fetches children with no type filter
 TYPE_FILTER = 'issuetype in (Story, "New Feature", Improvement, Epic)'
 MAX_RETRIES = 5
 
@@ -80,8 +88,9 @@ def get_jira_json(url: str, logger: logging.Logger, delay_s: float) -> dict | No
     return None
 
 
-def enumerate_keys(project: str, from_date: str, to_date: str,
-                   batch_size: int, delay_s: float, logger: logging.Logger) -> list[str]:
+def enumerate_requirement_keys(project: str, from_date: str, to_date: str,
+                               batch_size: int, delay_s: float,
+                               logger: logging.Logger) -> list[str]:
     jql = (
         f'project = {project} AND created >= "{from_date}" AND created < "{to_date}"'
         f" AND {TYPE_FILTER} ORDER BY created ASC"
@@ -92,7 +101,8 @@ def enumerate_keys(project: str, from_date: str, to_date: str,
     start_at = 0
     total = -1
 
-    logger.info("Enumerating issues in project=%s window=[%s .. %s]", project, from_date, to_date)
+    logger.info("Pass 1: enumerating requirements in project=%s window=[%s, %s)",
+                project, from_date, to_date)
 
     while True:
         url = (
@@ -108,7 +118,7 @@ def enumerate_keys(project: str, from_date: str, to_date: str,
 
         if total < 0:
             total = int(page.get("total", 0))
-            logger.info("Total matching issues: %d", total)
+            logger.info("Total requirement issues: %d", total)
 
         start_at += batch_size
         logger.info("Enumerated %d/%d", min(start_at, total), total)
@@ -117,8 +127,27 @@ def enumerate_keys(project: str, from_date: str, to_date: str,
         if start_at >= total:
             break
 
-    logger.info("Enumeration complete: %d keys collected.", len(all_keys))
+    logger.info("Pass 1 enumeration complete: %d keys.", len(all_keys))
     return all_keys
+
+
+def collect_child_keys(out_dir: str) -> set[str]:
+    """
+    Scan all fetched requirement JSONs and collect subtask keys.
+    These are the task-side issues needed for decomposition pairs.
+    """
+    child_keys: set[str] = set()
+    for path in glob.glob(os.path.join(out_dir, "*.json")):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                issue = json.load(fh)
+            for subtask in issue.get("fields", {}).get("subtasks", []):
+                key = subtask.get("key")
+                if key:
+                    child_keys.add(key)
+        except Exception:
+            pass
+    return child_keys
 
 
 def fetch_issue(key: str, out_dir: str, delay_s: float, logger: logging.Logger) -> bool:
@@ -151,24 +180,56 @@ def fetch_issue(key: str, out_dir: str, delay_s: float, logger: logging.Logger) 
     return True
 
 
+def run_pass(keys: list[str], label: str, out_dir: str, chk_file: str,
+             done: set[str], delay_s: float, logger: logging.Logger) -> None:
+    fetched = skipped = failed = 0
+
+    for key in keys:
+        if key in done:
+            skipped += 1
+            continue
+
+        ok = fetch_issue(key, out_dir, delay_s, logger)
+        if not ok:
+            failed += 1
+        else:
+            done.add(key)
+            with open(chk_file, "a", encoding="utf-8") as fh:
+                fh.write(key + "\n")
+            fetched += 1
+
+        if fetched % 50 == 0 and fetched > 0:
+            logger.info(
+                "%s: fetched %d/%d (skipped=%d, failed=%d)",
+                label, fetched, len(keys), skipped, failed,
+            )
+
+        time.sleep(delay_s)
+
+    logger.info("%s complete. Fetched=%d Skipped=%d Failed=%d", label, fetched, skipped, failed)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Extract Jira requirement issues for a project.")
+    parser = argparse.ArgumentParser(
+        description="Extract Jira requirement issues and their child tasks."
+    )
     parser.add_argument("--project", required=True, help="Jira project key, e.g. SPARK")
     parser.add_argument("--from-date", default="2022-01-01")
-    parser.add_argument("--to-date", default="2026-01-01", help="Exclusive upper bound (covers through end of 2025)")
+    parser.add_argument("--to-date", default="2026-01-01",
+                        help="Exclusive upper bound (default covers through end of 2025)")
     parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--delay-ms", type=int, default=400)
     args = parser.parse_args()
 
-    delay_s = args.delay_ms / 1000.0
-    out_dir = f"./extract_out/raw/{args.project}"
+    delay_s  = args.delay_ms / 1000.0
+    out_dir  = f"./extract_out/raw/{args.project}"
     chk_file = os.path.join(out_dir, ".checkpoint.txt")
     log_file = os.path.join(out_dir, ".extraction.log")
 
     os.makedirs(out_dir, exist_ok=True)
     logger = setup_logging(log_file)
 
-    # Load checkpoint.
+    # Load checkpoint (shared across both passes).
     done: set[str] = set()
     if os.path.exists(chk_file):
         with open(chk_file, encoding="utf-8") as fh:
@@ -178,36 +239,26 @@ def main() -> None:
                     done.add(key)
         logger.info("Resuming: %d issues already extracted.", len(done))
 
-    all_keys = enumerate_keys(
+    # Pass 1: requirements.
+    req_keys = enumerate_requirement_keys(
         args.project, args.from_date, args.to_date,
         args.batch_size, delay_s, logger,
     )
+    run_pass(req_keys, "Pass 1 (requirements)", out_dir, chk_file, done, delay_s, logger)
 
-    fetched = skipped = failed = 0
+    # Pass 2: child tasks referenced by the fetched requirements.
+    logger.info("Pass 2: collecting child keys from fetched requirements ...")
+    child_keys = collect_child_keys(out_dir)
+    new_child_keys = sorted(child_keys - done)
+    logger.info("Found %d child keys total, %d not yet fetched.",
+                len(child_keys), len(new_child_keys))
 
-    for key in all_keys:
-        if key in done:
-            skipped += 1
-            continue
+    if new_child_keys:
+        run_pass(new_child_keys, "Pass 2 (child tasks)", out_dir, chk_file, done, delay_s, logger)
+    else:
+        logger.info("Pass 2: nothing to fetch.")
 
-        ok = fetch_issue(key, out_dir, delay_s, logger)
-        if not ok:
-            failed += 1
-        else:
-            with open(chk_file, "a", encoding="utf-8") as fh:
-                fh.write(key + "\n")
-            fetched += 1
-
-        if fetched % 50 == 0 and fetched > 0:
-            logger.info(
-                "Fetched %d / %d (skipped=%d, failed=%d)",
-                fetched, len(all_keys), skipped, failed,
-            )
-
-        time.sleep(delay_s)
-
-    logger.info("Extraction complete. Fetched=%d Skipped=%d Failed=%d", fetched, skipped, failed)
-    logger.info("Raw files in: %s", out_dir)
+    logger.info("All done. Raw files in: %s", out_dir)
 
 
 if __name__ == "__main__":

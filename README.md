@@ -135,37 +135,33 @@ Pick three to five projects that clear this bar.
 For each selected project, run the main extraction. This is the long step.
 
 ```bash
-python 03_extract_issues.py --project SPARK --from-date 2022-01-01 --to-date 2026-01-01
-python 03_extract_issues.py --project FLINK --from-date 2022-01-01 --to-date 2026-01-01
-python 03_extract_issues.py --project KAFKA --from-date 2022-01-01 --to-date 2026-01-01
+python 03_extract_issues.py --project SPARK
+python 03_extract_issues.py --project FLINK
+python 03_extract_issues.py --project KAFKA
 ```
 
-The `--to-date` is an exclusive upper bound; `2026-01-01` covers through the
-end of 2025.
+The script runs in two passes:
 
-The script works in two passes:
+**Pass 1 — Requirements.** A paginated JQL search collects all requirement-type
+issues (`Story`, `New Feature`, `Improvement`, `Epic`) created in the target
+window, then fetches each one in full (`GET /issue/{key}?expand=changelog`).
 
-1. **Enumerate** — paginated JQL search (`fields=key` only) to collect all
-   matching issue keys. Fast and cheap.
-2. **Fetch** — per-issue `GET /issue/{key}?expand=changelog`, with a follow-up
-   call to the paginated changelog endpoint for issues with > 100 history
-   entries.
+**Pass 2 — Child tasks.** After Pass 1, the script scans every fetched
+requirement JSON for subtask keys (from the `subtasks` field) and fetches
+those child issues without any type filter. This is what populates the task
+side of the fine-tuning pairs built in Step 5.
 
-Each issue is saved as a single JSON file under `raw/<PROJECT>/`. A checkpoint
-file `raw/<PROJECT>/.checkpoint.txt` records completed keys — rerunning the
-same command resumes where it left off.
+A single checkpoint file (`raw/<PROJECT>/.checkpoint.txt`) records every
+fetched key across both passes. Rerunning the same command resumes exactly
+where it left off.
 
 **Rate limiting:** a 400 ms inter-request delay is built in. The Apache
 instance enforces HTTP 429 under load; the script retries with exponential
 backoff up to 5 attempts.
 
-### Note on Sub-tasks
-
-By default, only requirement-type issues (`Story`, `New Feature`, `Improvement`,
-`Epic`) are extracted. Native Jira **Sub-task** issues are a separate type
-and are not downloaded. Step 5 builds pairs at the **Epic → Story** level,
-where both sides are in the index. If you also need **Story → Sub-task** pairs,
-add `"Sub-task"` to `TYPE_FILTER` in `03_extract_issues.py` and re-extract.
+**Changelog pagination:** issues with > 100 history entries return only the
+first 100 in the expanded search response. The script detects this and
+follows up on the dedicated changelog endpoint automatically.
 
 ---
 
@@ -257,9 +253,9 @@ Two sources are merged and deduplicated for each parent:
 2. **Subtask keys** — keys listed in the parent's `subtasks` field that also
    appear in the index.
 
-Children absent from the index (e.g., native Sub-task issues not extracted
-in Step 3) are silently excluded. The `pairs_summary.csv` reports how many
-requirements were skipped because no in-index children were found.
+Children absent from the index are silently excluded. The `pairs_summary.csv`
+reports how many requirements were skipped because no in-index children were
+found (`Skipped_No_Tasks`).
 
 ### Output schema (`dataset/decomposition_pairs.jsonl`)
 
