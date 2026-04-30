@@ -23,6 +23,7 @@ TARGET_NAMES = {
     "Epic Link",
     "Epic Name",
     "Fix Version/s",
+    "Story Points",
 }
 
 

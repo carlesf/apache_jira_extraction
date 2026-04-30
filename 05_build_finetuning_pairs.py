@@ -130,8 +130,9 @@ def task_record(child: dict) -> dict:
         "components":            child["components"],
         "labels":                child["labels"],
         "fix_versions":          child["fix_versions"],
-        "original_estimate_sec": child.get("original_estimate_sec"),
-        "time_spent_sec":        child.get("time_spent_sec"),
+        "story_points":         child.get("story_points"),
+        "original_estimate_h":  child.get("original_estimate_h"),
+        "time_spent_h":         child.get("time_spent_h"),
         "dependency_links":      child["dependency_links"],
     }
 

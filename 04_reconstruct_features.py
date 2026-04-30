@@ -9,6 +9,7 @@ Output schema is oriented toward task-decomposition fine-tuning:
   - Hierarchy  : parent_key (Epic or parent Story), subtasks
   - Decomp     : dependency_links (blocks / depends-on relationships)
   - Context    : title, description, components, labels, fix_versions
+  - Effort     : story_points, original_estimate_h, time_spent_h
   - Metadata   : key, project, type, created_at, resolved_at, status, priority
 
 Core rule: for time-varying fields (priority, ...), the value at creation is
@@ -70,12 +71,34 @@ def get_link_added_at(issue: dict, target_key: str) -> str | None:
     return None
 
 
-def process_issue(issue: dict, epic_link_field: str | None) -> dict:
+def _sec_to_h(seconds) -> float | None:
+    """Convert Jira seconds integer to rounded hours, or None if not set."""
+    if seconds is None:
+        return None
+    try:
+        return round(int(seconds) / 3600, 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def process_issue(issue: dict, epic_link_field: str | None,
+                  story_points_field: str | None) -> dict:
     f = issue.get("fields", {})
 
     # Priority at creation.
     cur_priority = f.get("priority", {}).get("name") if f.get("priority") else None
     priority_at_creation = get_value_at_creation(issue, "priority", cur_priority)
+
+    # Story points at planning time (custom field, may be absent).
+    story_points = None
+    if story_points_field:
+        cur_sp = f.get(story_points_field)
+        raw_sp = get_value_at_creation(issue, story_points_field, cur_sp)
+        if raw_sp is not None:
+            try:
+                story_points = float(raw_sp)
+            except (TypeError, ValueError):
+                story_points = None
 
     # Parent: subtask parent or Epic Link custom field.
     parent_key = None
@@ -119,11 +142,12 @@ def process_issue(issue: dict, epic_link_field: str | None) -> dict:
         "title":                f.get("summary"),
         "description":          f.get("description"),
         "priority_at_creation": priority_at_creation,
+        "story_points":         story_points,
+        "original_estimate_h":  _sec_to_h(f.get("timeoriginalestimate")),
+        "time_spent_h":         _sec_to_h(f.get("timespent")),
         "components":           components,
         "labels":               labels,
         "fix_versions":         fix_versions,
-        "original_estimate_sec": f.get("timeoriginalestimate"),
-        "time_spent_sec":       f.get("timespent"),
         "parent_key":           parent_key,
         "subtasks":             subtasks,
         "dependency_links":     links,
@@ -153,23 +177,25 @@ def main() -> None:
     with open(field_map_path, encoding="utf-8") as fh:
         field_map = json.load(fh)
 
-    epic_link_field = field_map.get("Epic Link")
+    epic_link_field    = field_map.get("Epic Link")
+    story_points_field = field_map.get("Story Points")
 
     raw_files = sorted(glob.glob(os.path.join(in_dir, "*.json")))
     print(f"Processing {len(raw_files)} issues from {in_dir} ...")
 
     stats = {
-        "total":                0,
-        "has_description":      0,
-        "has_components":       0,
-        "has_labels":           0,
-        "has_fix_versions":     0,
+        "total":                 0,
+        "has_description":       0,
+        "has_components":        0,
+        "has_labels":            0,
+        "has_fix_versions":      0,
+        "has_story_points":      0,
         "has_original_estimate": 0,
-        "has_time_spent":       0,
-        "has_parent":           0,
-        "has_subtasks":         0,
-        "has_links":            0,
-        "has_resolution":       0,
+        "has_time_spent":        0,
+        "has_parent":            0,
+        "has_subtasks":          0,
+        "has_links":             0,
+        "has_resolution":        0,
     }
 
     with open(out_jsonl, "w", encoding="utf-8") as out_fh:
@@ -177,7 +203,7 @@ def main() -> None:
             with open(filepath, encoding="utf-8") as fh:
                 issue = json.load(fh)
 
-            record = process_issue(issue, epic_link_field)
+            record = process_issue(issue, epic_link_field, story_points_field)
 
             stats["total"] += 1
             if record["description"]:
@@ -188,9 +214,11 @@ def main() -> None:
                 stats["has_labels"] += 1
             if record["fix_versions"]:
                 stats["has_fix_versions"] += 1
-            if record["original_estimate_sec"] is not None:
+            if record["story_points"] is not None:
+                stats["has_story_points"] += 1
+            if record["original_estimate_h"] is not None:
                 stats["has_original_estimate"] += 1
-            if record["time_spent_sec"] is not None:
+            if record["time_spent_h"] is not None:
                 stats["has_time_spent"] += 1
             if record["parent_key"]:
                 stats["has_parent"] += 1
@@ -214,6 +242,7 @@ def main() -> None:
         {"Field": "has_components",    "Count": stats["has_components"],   "Rate": round(stats["has_components"]   / total, 3)},
         {"Field": "has_labels",        "Count": stats["has_labels"],       "Rate": round(stats["has_labels"]       / total, 3)},
         {"Field": "has_fix_versions",      "Count": stats["has_fix_versions"],      "Rate": round(stats["has_fix_versions"]      / total, 3)},
+        {"Field": "has_story_points",      "Count": stats["has_story_points"],      "Rate": round(stats["has_story_points"]      / total, 3)},
         {"Field": "has_original_estimate", "Count": stats["has_original_estimate"], "Rate": round(stats["has_original_estimate"] / total, 3)},
         {"Field": "has_time_spent",        "Count": stats["has_time_spent"],        "Rate": round(stats["has_time_spent"]        / total, 3)},
         {"Field": "has_parent",            "Count": stats["has_parent"],            "Rate": round(stats["has_parent"]            / total, 3)},

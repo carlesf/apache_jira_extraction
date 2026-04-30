@@ -199,13 +199,14 @@ relationships exist, which limits how many pairs Step 5 can produce.
   "resolved_at":          "2023-04-02T16:55:01.000+0000",
   "title":                "Add support for ANSI interval type in Parquet reader",
   "description":          "Currently the Parquet reader does not handle ...",
-  "priority_at_creation":  "Major",
-  "components":            ["SQL", "Input/Output"],
-  "labels":                ["correctness"],
-  "fix_versions":          ["3.5.0"],
-  "original_estimate_sec": 14400,
-  "time_spent_sec":        18000,
-  "parent_key":            "SPARK-38000",
+  "priority_at_creation": "Major",
+  "story_points":         3.0,
+  "original_estimate_h":  4.0,
+  "time_spent_h":         5.0,
+  "components":           ["SQL", "Input/Output"],
+  "labels":               ["correctness"],
+  "fix_versions":         ["3.5.0"],
+  "parent_key":           "SPARK-38000",
   "subtasks":              ["SPARK-40002", "SPARK-40003"],
   "dependency_links": [
     {
@@ -281,24 +282,26 @@ found (`Skipped_No_Tasks`).
       "type":             "Story",
       "title":            "Add support for ANSI interval type in Parquet reader",
       "description":      "Currently the Parquet reader does not handle ...",
-      "components":            ["SQL", "Input/Output"],
-      "labels":                ["correctness"],
-      "fix_versions":          ["3.5.0"],
-      "original_estimate_sec": 14400,
-      "time_spent_sec":        18000,
-      "dependency_links":      []
+      "components":           ["SQL", "Input/Output"],
+      "labels":               ["correctness"],
+      "fix_versions":         ["3.5.0"],
+      "story_points":         3.0,
+      "original_estimate_h":  4.0,
+      "time_spent_h":         5.0,
+      "dependency_links":     []
     },
     {
-      "key":                   "SPARK-40005",
-      "type":                  "Improvement",
-      "title":                 "Add interval type casting in Catalyst",
-      "description":           "Catalyst currently throws on INTERVAL ...",
-      "components":            ["SQL"],
-      "labels":                [],
-      "fix_versions":          ["3.5.0"],
-      "original_estimate_sec": null,
-      "time_spent_sec":        null,
-      "dependency_links":      []
+      "key":                  "SPARK-40005",
+      "type":                 "Improvement",
+      "title":                "Add interval type casting in Catalyst",
+      "description":          "Catalyst currently throws on INTERVAL ...",
+      "components":           ["SQL"],
+      "labels":               [],
+      "fix_versions":         ["3.5.0"],
+      "story_points":         null,
+      "original_estimate_h":  null,
+      "time_spent_h":         null,
+      "dependency_links":     []
     }
   ]
 }
@@ -318,12 +321,13 @@ for fields set at creation and never modified. The reconstruction rule in
 Step 4 handles this: if no change history exists for a field, the current
 value is the creation value.
 
-**`original_estimate_sec` and `time_spent_sec` are sparsely populated.**
-Apache projects rarely enforce time tracking, so expect low coverage on both
-fields (often under 20%). `original_estimate_sec` reflects the planned effort
-and is meaningful as a training target; `time_spent_sec` is the total time
-logged against the issue and is inherently post-hoc — treat it as ground-truth
-label rather than a planning input. Both are `null` when not set.
+**Effort fields are sparsely populated.**
+Apache projects rarely enforce time tracking or story points, so expect low
+coverage on `story_points`, `original_estimate_h`, and `time_spent_h` (often
+under 20%). `original_estimate_h` reflects the planned effort in hours and is
+meaningful as a training target; `time_spent_h` is the total time logged and
+is inherently post-hoc — treat it as a ground-truth label rather than a
+planning input. All three are `null` when not set.
 
 **Issue links are bidirectional and duplicated.** If SPARK-A "blocks" SPARK-B,
 both issues record the link from their own perspective. When building a
