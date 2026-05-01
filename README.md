@@ -140,19 +140,27 @@ python 03_extract_issues.py --project FLINK
 python 03_extract_issues.py --project KAFKA
 ```
 
-The script runs in two passes:
+The script runs in three stages:
 
 **Pass 1 — Requirements.** A paginated JQL search collects all requirement-type
 issues (`Story`, `New Feature`, `Improvement`, `Epic`) created in the target
 window, then fetches each one in full (`GET /issue/{key}?expand=changelog`).
 
-**Pass 2 — Child tasks.** After Pass 1, the script scans every fetched
-requirement JSON for subtask keys (from the `subtasks` field) and fetches
-those child issues without any type filter. This is what populates the task
-side of the fine-tuning pairs built in Step 5.
+**Pass 2a — Subtasks.** After Pass 1, the script scans only the fetched Pass 1
+requirement JSON files for subtask keys (from the `subtasks` field) and
+fetches those child issues without any type filter.
+
+**Pass 2b — Epic-linked children.** The script also detects fetched Epics and
+searches for issues in the same project whose `Epic Link` points to those
+Epics. This catches Task, Bug, Story, and other child issue types that may not
+appear in Pass 1 and are not represented as native subtasks, improving
+coverage for Epic → child decomposition pairs. Epic Link searches are batched
+and sent with POST requests to avoid long Jira search URLs. The child
+collection stages are one-hop coverage improvements, not recursive graph
+expansion.
 
 A single checkpoint file (`raw/<PROJECT>/.checkpoint.txt`) records every
-fetched key across both passes. Rerunning the same command resumes exactly
+fetched key across all passes. Rerunning the same command resumes exactly
 where it left off.
 
 **Rate limiting:** a 400 ms inter-request delay is built in. The Apache
