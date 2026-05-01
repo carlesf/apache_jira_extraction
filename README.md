@@ -251,6 +251,15 @@ python 05_build_finetuning_pairs.py --projects SPARK FLINK KAFKA
 # Stricter filters
 python 05_build_finetuning_pairs.py --min-tasks 2 --resolved-only
 python 05_build_finetuning_pairs.py --min-tasks 2 --resolved-only --children-completed-only
+
+# Cleaner general set from richer Epic-linked extraction
+python 05_build_finetuning_pairs.py --projects IGNITE --min-tasks 2 --max-tasks 12 --min-quality-score 3
+
+# Exclude noisy child issue types
+python 05_build_finetuning_pairs.py --projects IGNITE --min-tasks 2 --max-tasks 12 --min-quality-score 3 --exclude-child-types Bug Test
+
+# Feature-to-task pairs only
+python 05_build_finetuning_pairs.py --projects IGNITE --decomposition-level feature_to_task --min-tasks 2 --max-tasks 12 --min-quality-score 3
 ```
 
 ### Options
@@ -259,9 +268,21 @@ python 05_build_finetuning_pairs.py --min-tasks 2 --resolved-only --children-com
 |------|---------|---------|
 | `--projects` | all in `clean/` | Project keys to include |
 | `--min-tasks` | `1` | Minimum number of tasks a requirement must have |
+| `--max-tasks` | off | Maximum number of children allowed after child-level filters |
+| `--min-quality-score` | off | Minimum `quality_score` required to keep a pair; values like `2` or `3` are useful for cleaner datasets |
+| `--decomposition-level` | off | Keep only `epic_to_feature` or `feature_to_task` pairs |
+| `--exclude-child-types` | off | Remove children of the listed issue types before task-count filters; matching is case-insensitive |
 | `--no-require-description` | off | Include requirements even without a description |
 | `--resolved-only` | off | Only include parent requirements completed by status (`Resolved`, `Closed`, `Done`) or resolution (`Fixed`, `Done`) |
 | `--children-completed-only` | off | Only keep completed children before applying `--min-tasks` |
+
+Filters are applied in this practical order: parent type, required parent
+description, parent completion for `--resolved-only`, child collection,
+`--children-completed-only`, `--exclude-child-types`, `--min-tasks`,
+`--max-tasks`, `--decomposition-level`, then `--min-quality-score`.
+`quality_score` and `decomposition_level` are computed once for each surviving
+candidate pair. The summary CSV includes skip counters for max-task,
+low-quality, decomposition-level, and child-exclusion effects.
 
 ### How children are collected
 

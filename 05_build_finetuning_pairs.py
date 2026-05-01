@@ -54,6 +54,15 @@ Usage
   # Also require each retained child task to be completed
   python 05_build_finetuning_pairs.py --min-tasks 2 --children-completed-only
 
+  # Cleaner set from richer Epic-link extraction
+  python 05_build_finetuning_pairs.py --min-tasks 2 --max-tasks 12 --min-quality-score 3
+
+  # Exclude noisy child issue types
+  python 05_build_finetuning_pairs.py --min-tasks 2 --max-tasks 12 --min-quality-score 3 --exclude-child-types Bug Test
+
+  # Feature-to-task pairs only
+  python 05_build_finetuning_pairs.py --decomposition-level feature_to_task --min-tasks 2 --max-tasks 12 --min-quality-score 3
+
   # Allow requirements without a description (not recommended)
   python 05_build_finetuning_pairs.py --no-require-description
 ----------------------------------------------------------------------------
@@ -83,6 +92,7 @@ REQUIREMENT_TYPES = {"Epic", "Story", "New Feature", "Improvement"}
 # status, while resolution describes why work ended; --resolved-only uses both.
 COMPLETED_STATUSES = {"resolved", "closed", "done"}
 COMPLETED_RESOLUTIONS = {"fixed", "done"}
+DECOMPOSITION_LEVELS = ("epic_to_feature", "feature_to_task")
 
 
 def load_index(projects: List[str]) -> Dict[str, dict]:
@@ -124,6 +134,10 @@ def _normalised(value) -> str:
     return str(value).strip().casefold() if value is not None else ""
 
 
+def _normalised_set(values: List[str]) -> Set[str]:
+    return {_normalised(value) for value in values if _normalised(value)}
+
+
 def is_completed(record: dict) -> bool:
     """Return True when Jira status or resolution conservatively means done."""
     return (
@@ -143,6 +157,10 @@ def _parse_jira_timestamp(value) -> Optional[datetime]:
 
 def decomposition_level(parent: dict) -> str:
     return "epic_to_feature" if parent.get("type") == "Epic" else "feature_to_task"
+
+
+def child_type_is_excluded(child: dict, excluded_types: Set[str]) -> bool:
+    return _normalised(child.get("type")) in excluded_types
 
 
 def quality_score(parent: dict, children: List[dict]) -> int:
@@ -180,7 +198,7 @@ def quality_score(parent: dict, children: List[dict]) -> int:
     if comparable_child_dates and all(child_created >= parent_created for child_created in comparable_child_dates):
         score += 1
 
-    if any(child.get("type") == "Bug" for child in children):
+    if any(_normalised(child.get("type")) == "bug" for child in children):
         score -= 1
 
     return score
@@ -231,6 +249,21 @@ def requirement_record(parent: dict) -> dict:
     }
 
 
+def initial_stats() -> dict:
+    return {
+        "requirements": 0,
+        "pairs_written": 0,
+        "skipped_no_desc": 0,
+        "skipped_no_tasks": 0,
+        "skipped_unresolved": 0,
+        "skipped_max_tasks": 0,
+        "skipped_low_quality": 0,
+        "skipped_decomposition_level": 0,
+        "skipped_after_child_exclusion": 0,
+        "total_tasks": 0,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build (requirement, tasks) fine-tuning pairs from clean Jira JSONL."
@@ -242,6 +275,22 @@ def main() -> None:
     parser.add_argument(
         "--min-tasks", type=int, default=1,
         help="Minimum number of tasks a requirement must have to be included (default: 1)."
+    )
+    parser.add_argument(
+        "--max-tasks", type=int,
+        help="Maximum number of tasks a requirement may have after child filters."
+    )
+    parser.add_argument(
+        "--min-quality-score", type=int,
+        help="Minimum quality_score to keep a pair; common cleaner values are 2 or 3."
+    )
+    parser.add_argument(
+        "--decomposition-level", choices=DECOMPOSITION_LEVELS,
+        help="Only keep pairs at this decomposition level."
+    )
+    parser.add_argument(
+        "--exclude-child-types", nargs="+", default=[],
+        help="Exclude child issue types before task-count filters; matching is case-insensitive."
     )
     parser.add_argument(
         "--no-require-description", dest="require_description",
@@ -257,6 +306,11 @@ def main() -> None:
         help="Only keep completed child tasks before applying --min-tasks."
     )
     args = parser.parse_args()
+
+    if args.max_tasks is not None and args.max_tasks < 1:
+        parser.error("--max-tasks must be >= 1")
+
+    excluded_child_types = _normalised_set(args.exclude_child_types)
 
     # Discover projects.
     if args.projects:
@@ -283,14 +337,7 @@ def main() -> None:
     # Per-project stats.
     stats: Dict[str, dict] = {}
     for proj in projects:
-        stats[proj] = {
-            "requirements":    0,
-            "pairs_written":   0,
-            "skipped_no_desc": 0,
-            "skipped_no_tasks": 0,
-            "skipped_unresolved": 0,
-            "total_tasks":     0,
-        }
+        stats[proj] = initial_stats()
 
     pairs_written = 0
 
@@ -300,13 +347,12 @@ def main() -> None:
                 continue
 
             proj = parent.get("project", "UNKNOWN")
-            s = stats.get(proj, stats.setdefault(proj, {
-                "requirements": 0, "pairs_written": 0,
-                "skipped_no_desc": 0, "skipped_no_tasks": 0,
-                "skipped_unresolved": 0, "total_tasks": 0,
-            }))
+            s = stats.get(proj, stats.setdefault(proj, initial_stats()))
             s["requirements"] += 1
 
+            # Filtering order:
+            # 1. parent description/completion, 2. child-level filters,
+            # 3. task count limits, 4. decomposition level, 5. quality score.
             if args.require_description and not parent.get("description"):
                 s["skipped_no_desc"] += 1
                 continue
@@ -319,15 +365,39 @@ def main() -> None:
             if args.children_completed_only:
                 children = [child for child in children if is_completed(child)]
 
+            children_before_type_exclusion = len(children)
+            if excluded_child_types:
+                children = [
+                    child for child in children
+                    if not child_type_is_excluded(child, excluded_child_types)
+                ]
+
             if len(children) < args.min_tasks:
-                s["skipped_no_tasks"] += 1
+                if excluded_child_types and children_before_type_exclusion >= args.min_tasks:
+                    s["skipped_after_child_exclusion"] += 1
+                else:
+                    s["skipped_no_tasks"] += 1
+                continue
+
+            if args.max_tasks is not None and len(children) > args.max_tasks:
+                s["skipped_max_tasks"] += 1
+                continue
+
+            level = decomposition_level(parent)
+            if args.decomposition_level and level != args.decomposition_level:
+                s["skipped_decomposition_level"] += 1
+                continue
+
+            score = quality_score(parent, children)
+            if args.min_quality_score is not None and score < args.min_quality_score:
+                s["skipped_low_quality"] += 1
                 continue
 
             pair = {
                 "id":                  parent["key"],
                 "project":             proj,
-                "decomposition_level": decomposition_level(parent),
-                "quality_score":       quality_score(parent, children),
+                "decomposition_level": level,
+                "quality_score":       score,
                 "requirement":         requirement_record(parent),
                 "tasks":               [task_record(c) for c in children],
             }
@@ -350,6 +420,10 @@ def main() -> None:
             "Skipped_No_Desc":   s["skipped_no_desc"],
             "Skipped_No_Tasks":  s["skipped_no_tasks"],
             "Skipped_Unresolved": s["skipped_unresolved"],
+            "Skipped_Max_Tasks": s["skipped_max_tasks"],
+            "Skipped_Low_Quality": s["skipped_low_quality"],
+            "Skipped_Decomposition_Level": s["skipped_decomposition_level"],
+            "Skipped_After_Child_Exclusion": s["skipped_after_child_exclusion"],
             "Avg_Tasks":         avg_tasks,
             "Total_Tasks":       s["total_tasks"],
         })
@@ -357,6 +431,8 @@ def main() -> None:
     fieldnames = [
         "Project", "Requirements", "Pairs_Written", "Pair_Rate",
         "Skipped_No_Desc", "Skipped_No_Tasks", "Skipped_Unresolved",
+        "Skipped_Max_Tasks", "Skipped_Low_Quality",
+        "Skipped_Decomposition_Level", "Skipped_After_Child_Exclusion",
         "Avg_Tasks", "Total_Tasks",
     ]
     with open(OUT_SUMMARY, "w", newline="", encoding="utf-8") as fh:
@@ -384,8 +460,8 @@ def main() -> None:
     print(f"Summary : {OUT_SUMMARY}")
 
     print("\nNOTE: Only children present in the clean index contribute to pairs.")
-    print("      Script 03 fetches subtasks automatically in Pass 2, so both")
-    print("      Epic->Story and Story->Sub-task hierarchies are supported.")
+    print("      Script 03 fetches subtasks and Epic-linked children, so both")
+    print("      Epic->child and Story->Sub-task hierarchies are supported.")
 
 
 if __name__ == "__main__":
