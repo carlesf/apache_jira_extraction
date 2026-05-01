@@ -24,6 +24,8 @@ Output schema (one JSON object per line):
   {
     "id":          "SPARK-12345",       # parent key
     "project":     "SPARK",
+    "decomposition_level": "epic_to_feature",
+    "quality_score": 4,
     "requirement": {
       "key", "type", "title", "description",
       "components", "labels", "fix_versions", "priority"
@@ -31,7 +33,8 @@ Output schema (one JSON object per line):
     "tasks": [
       {
         "key", "type", "title", "description",
-        "components", "labels", "fix_versions", "dependency_links"
+        "components", "labels", "fix_versions", "parent_relation",
+        "dependency_links"
       },
       ...
     ]
@@ -45,8 +48,11 @@ Usage
   # Specific projects only
   python 05_build_finetuning_pairs.py --projects SPARK FLINK KAFKA
 
-  # Require at least 2 resolved tasks per requirement
+  # Require at least 2 tasks for each completed parent requirement
   python 05_build_finetuning_pairs.py --min-tasks 2 --resolved-only
+
+  # Also require each retained child task to be completed
+  python 05_build_finetuning_pairs.py --min-tasks 2 --children-completed-only
 
   # Allow requirements without a description (not recommended)
   python 05_build_finetuning_pairs.py --no-require-description
@@ -61,6 +67,8 @@ import glob
 import json
 import os
 from collections import defaultdict
+from datetime import datetime
+from typing import Dict, List, Optional, Set
 
 
 CLEAN_DIR  = "./extract_out/clean"
@@ -71,13 +79,15 @@ OUT_SUMMARY = os.path.join(OUT_DIR, "pairs_summary.csv")
 # Requirement-level issue types that can serve as parents.
 REQUIREMENT_TYPES = {"Epic", "Story", "New Feature", "Improvement"}
 
-# Resolution values that indicate completed work.
-RESOLVED_STATUSES = {"Resolved", "Closed", "Done"}
+# Conservative completion markers. Jira commonly stores workflow state in
+# status, while resolution describes why work ended; --resolved-only uses both.
+COMPLETED_STATUSES = {"resolved", "closed", "done"}
+COMPLETED_RESOLUTIONS = {"fixed", "done"}
 
 
-def load_index(projects: list[str]) -> dict[str, dict]:
+def load_index(projects: List[str]) -> Dict[str, dict]:
     """Load clean JSONL files and return a key→record index."""
-    index: dict[str, dict] = {}
+    index: Dict[str, dict] = {}
     for project in projects:
         path = os.path.join(CLEAN_DIR, f"{project}.jsonl")
         if not os.path.isfile(path):
@@ -96,9 +106,9 @@ def load_index(projects: list[str]) -> dict[str, dict]:
     return index
 
 
-def build_child_index(index: dict[str, dict]) -> dict[str, set[str]]:
+def build_child_index(index: Dict[str, dict]) -> Dict[str, Set[str]]:
     """Return parent_key → set of child keys, from back-links."""
-    children: dict[str, set[str]] = defaultdict(set)
+    children: Dict[str, Set[str]] = defaultdict(set)
     for record in index.values():
         pk = record.get("parent_key")
         if pk:
@@ -106,14 +116,84 @@ def build_child_index(index: dict[str, dict]) -> dict[str, set[str]]:
     return dict(children)
 
 
-def collect_children(parent: dict, child_index: dict[str, set[str]],
-                     index: dict[str, dict]) -> list[dict]:
+def _has_text(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _normalised(value) -> str:
+    return str(value).strip().casefold() if value is not None else ""
+
+
+def is_completed(record: dict) -> bool:
+    """Return True when Jira status or resolution conservatively means done."""
+    return (
+        _normalised(record.get("status")) in COMPLETED_STATUSES
+        or _normalised(record.get("resolution")) in COMPLETED_RESOLUTIONS
+    )
+
+
+def _parse_jira_timestamp(value) -> Optional[datetime]:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("+0000", "+00:00"))
+    except ValueError:
+        return None
+
+
+def decomposition_level(parent: dict) -> str:
+    return "epic_to_feature" if parent.get("type") == "Epic" else "feature_to_task"
+
+
+def quality_score(parent: dict, children: List[dict]) -> int:
+    """
+    Small interpretable heuristic for pair filtering/stratification:
+      +1 parent has description
+      +1 child count is 2..12
+      +1 at least half of children have descriptions
+      +1 comparable child creation times are not before the parent creation time
+      -1 child count is >20
+      -1 any child is a Bug
+    """
+    score = 0
+
+    if _has_text(parent.get("description")):
+        score += 1
+
+    child_count = len(children)
+    if 2 <= child_count <= 12:
+        score += 1
+    if child_count > 20:
+        score -= 1
+
+    described_children = sum(1 for child in children if _has_text(child.get("description")))
+    if child_count and described_children * 2 >= child_count:
+        score += 1
+
+    parent_created = _parse_jira_timestamp(parent.get("created_at"))
+    comparable_child_dates = []
+    if parent_created is not None:
+        for child in children:
+            child_created = _parse_jira_timestamp(child.get("created_at"))
+            if child_created is not None:
+                comparable_child_dates.append(child_created)
+    if comparable_child_dates and all(child_created >= parent_created for child_created in comparable_child_dates):
+        score += 1
+
+    if any(child.get("type") == "Bug" for child in children):
+        score -= 1
+
+    return score
+
+
+def collect_children(parent: dict, child_index: Dict[str, Set[str]],
+                     index: Dict[str, dict]) -> List[dict]:
     """
     Merge children from two sources and return only those present in the index.
     Source 1: back-link index (parent_key == parent.key)
     Source 2: parent.subtasks list
     """
-    child_keys: set[str] = set()
+    child_keys: Set[str] = set()
     child_keys.update(child_index.get(parent["key"], set()))
     child_keys.update(k for k in parent.get("subtasks", []) if k in index)
     # Exclude the parent itself (defensive check)
@@ -130,6 +210,7 @@ def task_record(child: dict) -> dict:
         "components":            child["components"],
         "labels":                child["labels"],
         "fix_versions":          child["fix_versions"],
+        "parent_relation":       child.get("parent_relation"),
         "story_points":         child.get("story_points"),
         "original_estimate_h":  child.get("original_estimate_h"),
         "time_spent_h":         child.get("time_spent_h"),
@@ -169,7 +250,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--resolved-only", action="store_true", default=False,
-        help="Only include pairs where the parent requirement is resolved/closed."
+        help="Only include pairs where the parent requirement has a completed status or resolution."
+    )
+    parser.add_argument(
+        "--children-completed-only", action="store_true", default=False,
+        help="Only keep completed child tasks before applying --min-tasks."
     )
     args = parser.parse_args()
 
@@ -196,7 +281,7 @@ def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
 
     # Per-project stats.
-    stats: dict[str, dict] = {}
+    stats: Dict[str, dict] = {}
     for proj in projects:
         stats[proj] = {
             "requirements":    0,
@@ -226,21 +311,25 @@ def main() -> None:
                 s["skipped_no_desc"] += 1
                 continue
 
-            if args.resolved_only and parent.get("resolution") not in RESOLVED_STATUSES:
+            if args.resolved_only and not is_completed(parent):
                 s["skipped_unresolved"] += 1
                 continue
 
             children = collect_children(parent, child_index, index)
+            if args.children_completed_only:
+                children = [child for child in children if is_completed(child)]
 
             if len(children) < args.min_tasks:
                 s["skipped_no_tasks"] += 1
                 continue
 
             pair = {
-                "id":          parent["key"],
-                "project":     proj,
-                "requirement": requirement_record(parent),
-                "tasks":       [task_record(c) for c in children],
+                "id":                  parent["key"],
+                "project":             proj,
+                "decomposition_level": decomposition_level(parent),
+                "quality_score":       quality_score(parent, children),
+                "requirement":         requirement_record(parent),
+                "tasks":               [task_record(c) for c in children],
             }
             out_fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
             s["pairs_written"] += 1

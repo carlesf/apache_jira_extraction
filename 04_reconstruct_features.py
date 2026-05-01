@@ -6,7 +6,7 @@ Reads raw per-issue JSON files from extract_out/raw/<PROJECT>/ and produces:
   - extract_out/clean/<PROJECT>.summary.csv   (population rates for sanity checks)
 
 Output schema is oriented toward task-decomposition fine-tuning:
-  - Hierarchy  : parent_key (Epic or parent Story), subtasks
+  - Hierarchy  : parent_key (Epic or parent Story), parent_relation, subtasks
   - Decomp     : dependency_links (blocks / depends-on relationships)
   - Context    : title, description, components, labels, fix_versions
   - Effort     : story_points, original_estimate_h, time_spent_h
@@ -30,6 +30,7 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from typing import List, Optional
 
 
 def _parse_dt(s: str) -> datetime:
@@ -42,7 +43,7 @@ def _parse_dt(s: str) -> datetime:
 
 def get_value_at_creation(issue: dict, field_name: str, current_value) -> object:
     """Return the field value at issue creation by finding the oldest changelog entry."""
-    oldest_created: datetime | None = None
+    oldest_created: Optional[datetime] = None
     oldest_from = None
 
     changelog = issue.get("changelog", {})
@@ -59,7 +60,7 @@ def get_value_at_creation(issue: dict, field_name: str, current_value) -> object
     return oldest_from
 
 
-def get_link_added_at(issue: dict, target_key: str) -> str | None:
+def get_link_added_at(issue: dict, target_key: str) -> Optional[str]:
     """Scan changelog for the timestamp when a link to target_key was added."""
     changelog = issue.get("changelog", {})
     for history in changelog.get("histories", []):
@@ -71,7 +72,7 @@ def get_link_added_at(issue: dict, target_key: str) -> str | None:
     return None
 
 
-def _sec_to_h(seconds) -> float | None:
+def _sec_to_h(seconds) -> Optional[float]:
     """Convert Jira seconds integer to hours, or None if not set."""
     if seconds is None:
         return None
@@ -81,8 +82,8 @@ def _sec_to_h(seconds) -> float | None:
         return None
 
 
-def process_issue(issue: dict, epic_link_field: str | None,
-                  story_points_field: str | None) -> dict:
+def process_issue(issue: dict, epic_link_field: Optional[str],
+                  story_points_field: Optional[str]) -> dict:
     f = issue.get("fields", {})
 
     # Priority at creation.
@@ -102,13 +103,17 @@ def process_issue(issue: dict, epic_link_field: str | None,
 
     # Parent: subtask parent or Epic Link custom field.
     parent_key = None
-    if f.get("parent"):
+    parent_relation = None
+    if f.get("parent") and f["parent"].get("key"):
         parent_key = f["parent"].get("key")
+        parent_relation = "subtask_parent"
     elif epic_link_field:
         parent_key = f.get(epic_link_field)
+        if parent_key:
+            parent_relation = "epic_link"
 
     # Issue links (blocks / depends-on / etc.).
-    links: list[dict] = []
+    links: List[dict] = []
     for link in f.get("issuelinks", []):
         if link.get("outwardIssue"):
             target = link["outwardIssue"]["key"]
@@ -149,6 +154,7 @@ def process_issue(issue: dict, epic_link_field: str | None,
         "labels":               labels,
         "fix_versions":         fix_versions,
         "parent_key":           parent_key,
+        "parent_relation":      parent_relation,
         "subtasks":             subtasks,
         "dependency_links":     links,
     }

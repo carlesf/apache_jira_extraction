@@ -11,7 +11,7 @@ Each training example consists of:
 - **Input** — a requirement issue: title, description, components, labels,
   fix versions, priority, and issue type.
 - **Output** — the list of child tasks derived from that requirement, each with
-  the same fields plus their dependency links.
+  the same fields plus their parent relationship provenance and dependency links.
 
 ### Scope
 
@@ -24,8 +24,8 @@ Each training example consists of:
 | Time window | 2022-01-01 to 2025-12-31 (inclusive) |
 | API | Public Jira REST API v2 — no authentication required |
 
-Bugs and Tasks are excluded from the requirement side. Story Points and
-time estimates are not collected.
+Bugs and Tasks are excluded from the requirement side. Story points and
+time estimates are collected when present, but are usually sparse in Apache Jira.
 
 ---
 
@@ -207,6 +207,7 @@ relationships exist, which limits how many pairs Step 5 can produce.
   "labels":               ["correctness"],
   "fix_versions":         ["3.5.0"],
   "parent_key":           "SPARK-38000",
+  "parent_relation":      "epic_link",
   "subtasks":              ["SPARK-40002", "SPARK-40003"],
   "dependency_links": [
     {
@@ -218,6 +219,12 @@ relationships exist, which limits how many pairs Step 5 can produce.
   ]
 }
 ```
+
+`parent_relation` records how `parent_key` was reconstructed:
+
+- `subtask_parent` — from Jira's native `fields.parent` relationship
+- `epic_link` — from the instance-specific Epic Link custom field
+- `null` — no parent relationship was found
 
 ---
 
@@ -235,6 +242,7 @@ python 05_build_finetuning_pairs.py --projects SPARK FLINK KAFKA
 
 # Stricter filters
 python 05_build_finetuning_pairs.py --min-tasks 2 --resolved-only
+python 05_build_finetuning_pairs.py --min-tasks 2 --resolved-only --children-completed-only
 ```
 
 ### Options
@@ -244,7 +252,8 @@ python 05_build_finetuning_pairs.py --min-tasks 2 --resolved-only
 | `--projects` | all in `clean/` | Project keys to include |
 | `--min-tasks` | `1` | Minimum number of tasks a requirement must have |
 | `--no-require-description` | off | Include requirements even without a description |
-| `--resolved-only` | off | Only include requirements that are Resolved or Closed |
+| `--resolved-only` | off | Only include parent requirements completed by status (`Resolved`, `Closed`, `Done`) or resolution (`Fixed`, `Done`) |
+| `--children-completed-only` | off | Only keep completed children before applying `--min-tasks` |
 
 ### How children are collected
 
@@ -252,7 +261,7 @@ Two sources are merged and deduplicated for each parent:
 
 1. **Back-links** — all issues in the index whose `parent_key` equals the
    parent's key. This covers Epic → Story relationships via the Epic Link
-   custom field.
+   custom field and subtask relationships via native Jira parent fields.
 2. **Subtask keys** — keys listed in the parent's `subtasks` field that also
    appear in the index.
 
@@ -264,8 +273,10 @@ found (`Skipped_No_Tasks`).
 
 ```json
 {
-  "id":      "SPARK-38000",
-  "project": "SPARK",
+  "id":                  "SPARK-38000",
+  "project":             "SPARK",
+  "decomposition_level": "epic_to_feature",
+  "quality_score":       4,
   "requirement": {
     "key":         "SPARK-38000",
     "type":        "Epic",
@@ -285,6 +296,7 @@ found (`Skipped_No_Tasks`).
       "components":           ["SQL", "Input/Output"],
       "labels":               ["correctness"],
       "fix_versions":         ["3.5.0"],
+      "parent_relation":      "epic_link",
       "story_points":         3.0,
       "original_estimate_h":  4.0,
       "time_spent_h":         5.0,
@@ -298,6 +310,7 @@ found (`Skipped_No_Tasks`).
       "components":           ["SQL"],
       "labels":               [],
       "fix_versions":         ["3.5.0"],
+      "parent_relation":      "epic_link",
       "story_points":         null,
       "original_estimate_h":  null,
       "time_spent_h":         null,
@@ -306,6 +319,16 @@ found (`Skipped_No_Tasks`).
   ]
 }
 ```
+
+`decomposition_level` is a coarse label for the hierarchy represented by the
+pair. Parents of type `Epic` are labelled `epic_to_feature`; all other
+requirement parents are labelled `feature_to_task`.
+
+`quality_score` is a small integer heuristic for filtering or stratifying
+pairs. The score adds one point each for: parent description present, 2–12
+children, at least half of children having descriptions, and comparable child
+creation timestamps not preceding the parent creation timestamp. It subtracts
+one point each for more than 20 children and for any child typed `Bug`.
 
 ---
 
