@@ -63,6 +63,9 @@ Usage
   # Feature-to-task pairs only
   python 05_build_finetuning_pairs.py --decomposition-level feature_to_task --min-tasks 2 --max-tasks 12 --min-quality-score 3
 
+  # Include task status trajectories in the pair output
+  python 05_build_finetuning_pairs.py --projects IGNITE --min-tasks 2 --include-status-history
+
   # Allow requirements without a description (not recommended)
   python 05_build_finetuning_pairs.py --no-require-description
 ----------------------------------------------------------------------------
@@ -101,7 +104,7 @@ def load_index(projects: List[str]) -> Dict[str, dict]:
     for project in projects:
         path = os.path.join(CLEAN_DIR, f"{project}.jsonl")
         if not os.path.isfile(path):
-            print(f"  WARNING: {path} not found — skipping.")
+            print(f"  WARNING: {path} not found - skipping.")
             continue
         count = 0
         with open(path, encoding="utf-8") as fh:
@@ -112,7 +115,7 @@ def load_index(projects: List[str]) -> Dict[str, dict]:
                 record = json.loads(line)
                 index[record["key"]] = record
                 count += 1
-        print(f"  Loaded {count:>6,} issues  ← {project}")
+        print(f"  Loaded {count:>6,} issues <- {project}")
     return index
 
 
@@ -219,8 +222,8 @@ def collect_children(parent: dict, child_index: Dict[str, Set[str]],
     return [index[k] for k in sorted(child_keys) if k in index]
 
 
-def task_record(child: dict) -> dict:
-    return {
+def task_record(child: dict, include_status_history: bool = False) -> dict:
+    record = {
         "key":                   child["key"],
         "type":                  child["type"],
         "title":                 child["title"],
@@ -234,6 +237,10 @@ def task_record(child: dict) -> dict:
         "time_spent_h":         child.get("time_spent_h"),
         "dependency_links":      child["dependency_links"],
     }
+    if include_status_history:
+        record["initial_status"] = child.get("initial_status")
+        record["status_history"] = child.get("status_history", [])
+    return record
 
 
 def requirement_record(parent: dict) -> dict:
@@ -304,6 +311,10 @@ def main() -> None:
     parser.add_argument(
         "--children-completed-only", action="store_true", default=False,
         help="Only keep completed child tasks before applying --min-tasks."
+    )
+    parser.add_argument(
+        "--include-status-history", action="store_true", default=False,
+        help="Include initial_status and status_history for each output task."
     )
     args = parser.parse_args()
 
@@ -399,7 +410,10 @@ def main() -> None:
                 "decomposition_level": level,
                 "quality_score":       score,
                 "requirement":         requirement_record(parent),
-                "tasks":               [task_record(c) for c in children],
+                "tasks":               [
+                    task_record(c, include_status_history=args.include_status_history)
+                    for c in children
+                ],
             }
             out_fh.write(json.dumps(pair, ensure_ascii=False) + "\n")
             s["pairs_written"] += 1

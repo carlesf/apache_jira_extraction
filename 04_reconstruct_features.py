@@ -8,6 +8,7 @@ Reads raw per-issue JSON files from extract_out/raw/<PROJECT>/ and produces:
 Output schema is oriented toward task-decomposition fine-tuning:
   - Hierarchy  : parent_key (Epic or parent Story), parent_relation, subtasks
   - Decomp     : dependency_links (blocks / depends-on relationships)
+  - Workflow   : initial_status, status_history
   - Context    : title, description, components, labels, fix_versions
   - Effort     : story_points, original_estimate_h, time_spent_h
   - Metadata   : key, project, type, created_at, resolved_at, status, priority
@@ -72,6 +73,32 @@ def get_link_added_at(issue: dict, target_key: str) -> Optional[str]:
     return None
 
 
+def extract_status_history(issue: dict) -> List[dict]:
+    """Return chronological status transitions from Jira changelog histories."""
+    transitions: List[dict] = []
+
+    changelog = issue.get("changelog", {})
+    for history in changelog.get("histories", []):
+        changed_at = history.get("created")
+        for item in history.get("items", []):
+            if item.get("field") == "status" or item.get("fieldId") == "status":
+                transitions.append({
+                    "from_status": item.get("fromString"),
+                    "to_status":   item.get("toString"),
+                    "changed_at":  changed_at,
+                })
+
+    return sorted(transitions, key=lambda t: _parse_dt(t.get("changed_at") or ""))
+
+
+def get_initial_status(current_status: Optional[str], status_history: List[dict]) -> Optional[str]:
+    if status_history:
+        first_from = status_history[0].get("from_status")
+        if first_from:
+            return first_from
+    return current_status
+
+
 def _sec_to_h(seconds) -> Optional[float]:
     """Convert Jira seconds integer to hours, or None if not set."""
     if seconds is None:
@@ -85,6 +112,9 @@ def _sec_to_h(seconds) -> Optional[float]:
 def process_issue(issue: dict, epic_link_field: Optional[str],
                   story_points_field: Optional[str]) -> dict:
     f = issue.get("fields", {})
+    current_status = f.get("status", {}).get("name") if f.get("status") else None
+    status_history = extract_status_history(issue)
+    initial_status = get_initial_status(current_status, status_history)
 
     # Priority at creation.
     cur_priority = f.get("priority", {}).get("name") if f.get("priority") else None
@@ -140,10 +170,12 @@ def process_issue(issue: dict, epic_link_field: Optional[str],
         "key":                  issue.get("key"),
         "project":              f.get("project", {}).get("key"),
         "type":                 f.get("issuetype", {}).get("name") if f.get("issuetype") else None,
-        "status":               f.get("status", {}).get("name") if f.get("status") else None,
+        "status":               current_status,
         "resolution":           f.get("resolution", {}).get("name") if f.get("resolution") else None,
         "created_at":           f.get("created"),
         "resolved_at":          f.get("resolutiondate"),
+        "initial_status":       initial_status,
+        "status_history":       status_history,
         "title":                f.get("summary"),
         "description":          f.get("description"),
         "priority_at_creation": priority_at_creation,
@@ -202,6 +234,8 @@ def main() -> None:
         "has_subtasks":          0,
         "has_links":             0,
         "has_resolution":        0,
+        "has_initial_status":    0,
+        "has_status_history":    0,
     }
 
     with open(out_jsonl, "w", encoding="utf-8") as out_fh:
@@ -234,6 +268,10 @@ def main() -> None:
                 stats["has_links"] += 1
             if record["resolution"]:
                 stats["has_resolution"] += 1
+            if record["initial_status"]:
+                stats["has_initial_status"] += 1
+            if record["status_history"]:
+                stats["has_status_history"] += 1
 
             out_fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -255,6 +293,8 @@ def main() -> None:
         {"Field": "has_subtasks",      "Count": stats["has_subtasks"],     "Rate": round(stats["has_subtasks"]     / total, 3)},
         {"Field": "has_links",         "Count": stats["has_links"],        "Rate": round(stats["has_links"]        / total, 3)},
         {"Field": "has_resolution",    "Count": stats["has_resolution"],   "Rate": round(stats["has_resolution"]   / total, 3)},
+        {"Field": "has_initial_status", "Count": stats["has_initial_status"], "Rate": round(stats["has_initial_status"] / total, 3)},
+        {"Field": "has_status_history", "Count": stats["has_status_history"], "Rate": round(stats["has_status_history"] / total, 3)},
     ]
 
     with open(out_summary, "w", newline="", encoding="utf-8") as fh:

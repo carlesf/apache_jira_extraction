@@ -177,7 +177,8 @@ follows up on the dedicated changelog endpoint automatically.
 
 The raw JSON contains current field values plus the full changelog. Step 4
 walks the changelog to recover field values that were in place at issue
-creation time, and writes one clean record per issue.
+creation time, reconstructs status transitions, and writes one clean record
+per issue.
 
 ```bash
 python 04_reconstruct_features.py --project SPARK
@@ -205,6 +206,14 @@ relationships exist, which limits how many pairs Step 5 can produce.
   "resolution":           "Fixed",
   "created_at":           "2023-03-15T09:12:44.000+0000",
   "resolved_at":          "2023-04-02T16:55:01.000+0000",
+  "initial_status":       "New",
+  "status_history": [
+    {
+      "from_status": "New",
+      "to_status":   "In Progress",
+      "changed_at":  "2023-03-16T10:30:00.000+0000"
+    }
+  ],
   "title":                "Add support for ANSI interval type in Parquet reader",
   "description":          "Currently the Parquet reader does not handle ...",
   "priority_at_creation": "Major",
@@ -234,6 +243,10 @@ relationships exist, which limits how many pairs Step 5 can produce.
 - `epic_link` — from the instance-specific Epic Link custom field
 - `null` — no parent relationship was found
 
+`status_history` records chronological Jira status changes from the changelog.
+`initial_status` is the `from_status` of the earliest status change when
+available; otherwise it falls back to the current `status`.
+
 ---
 
 ## Step 5 — Build Fine-Tuning Pairs
@@ -260,6 +273,9 @@ python 05_build_finetuning_pairs.py --projects IGNITE --min-tasks 2 --max-tasks 
 
 # Feature-to-task pairs only
 python 05_build_finetuning_pairs.py --projects IGNITE --decomposition-level feature_to_task --min-tasks 2 --max-tasks 12 --min-quality-score 3
+
+# Include task status trajectories in the output pairs
+python 05_build_finetuning_pairs.py --projects IGNITE --min-tasks 2 --include-status-history
 ```
 
 ### Options
@@ -275,6 +291,7 @@ python 05_build_finetuning_pairs.py --projects IGNITE --decomposition-level feat
 | `--no-require-description` | off | Include requirements even without a description |
 | `--resolved-only` | off | Only include parent requirements completed by status (`Resolved`, `Closed`, `Done`) or resolution (`Fixed`, `Done`) |
 | `--children-completed-only` | off | Only keep completed children before applying `--min-tasks` |
+| `--include-status-history` | off | Include `initial_status` and `status_history` on each output task |
 
 Filters are applied in this practical order: parent type, required parent
 description, parent completion for `--resolved-only`, child collection,
@@ -297,6 +314,10 @@ Two sources are merged and deduplicated for each parent:
 Children absent from the index are silently excluded. The `pairs_summary.csv`
 reports how many requirements were skipped because no in-index children were
 found (`Skipped_No_Tasks`).
+
+Status-history fields from Step 4 are not included in pair output by default.
+Use `--include-status-history` when task workflow trajectories are needed for
+analysis or training.
 
 ### Output schema (`dataset/decomposition_pairs.jsonl`)
 
