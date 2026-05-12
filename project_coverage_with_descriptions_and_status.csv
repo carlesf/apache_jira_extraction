@@ -1,0 +1,78 @@
+Project,Project_Name,Brief_Description,Total,Desc,Desc_Rate,Comp,Comp_Rate,Linked,Link_Rate,Start_Year,Still_Active_2026
+CELEBORN,Apache Celeborn,Remote shuffle service designed for large-scale data processing engines.,1286,513,0.399,0,0,-1,-0.001,2024,Yes
+CASSSIDECAR,Apache Cassandra Sidecar,"Sidecar service for Apache Cassandra to support operations, management, and integrations.",212,211,0.995,195,0.92,-1,-0.005,2023,Yes
+IOTDB,Apache IoTDB,Time-series database for IoT and industrial monitoring data.,1954,1470,0.752,455,0.233,-1,-0.001,2023,Yes
+HOP,Apache Hop,"Platform for data orchestration, transformation, and workflow automation.",386,325,0.842,297,0.769,-1,-0.003,2022,Yes
+SEDONA,Apache Sedona,Cluster computing system for large-scale geospatial data processing.,428,284,0.664,0,0,-1,-0.002,2022,Yes
+GOBBLIN,Apache Gobblin,"Data integration, ingestion, and replication framework.",338,218,0.645,106,0.314,-1,-0.003,2021,Yes
+YUNIKORN,Apache YuniKorn,"Universal, cloud-native resource scheduler for batch and container workloads.",733,702,0.958,612,0.835,-1,-0.001,2020,Yes
+HDDS,Apache Ozone,Storage layer for the Ozone object store and HDFS.,1627,1545,0.95,887,0.545,-1,-0.001,2020,Yes
+ASTERIXDB,Apache AsterixDB,"Open-source, scalable data management system for semi-structured and big data.",194,174,0.897,164,0.845,-1,-0.005,2020,Yes
+HUDI,Apache Hudi,Lakehouse storage framework for incremental data pipelines and upserts.,2884,1874,0.65,1502,0.521,-1,0,2020,Yes
+SYSTEMDS,Apache SystemDS,Machine learning system for end-to-end data science and linear algebra workloads.,228,75,0.329,67,0.294,-1,-0.004,2020,Yes
+MRESOLVER,Apache Maven Artifact Resolver,Library that resolves Maven artifacts and dependency graphs.,139,126,0.906,124,0.892,-1,-0.007,2019,Yes
+MINIFICPP,Apache MiNiFi C++,Lightweight C++ agent for collecting and moving data at the edge.,573,451,0.787,0,0,-1,-0.002,2019,Yes
+DAFFODIL,Apache Daffodil,Implementation of DFDL for parsing and unparsing text and binary data formats.,158,156,0.987,152,0.962,-1,-0.006,2018,Yes
+RATIS,Apache Ratis,Java library implementing the Raft consensus protocol for replicated state machines.,352,335,0.952,306,0.869,-1,-0.003,2018,Yes
+SCB,Apache ServiceComb,Microservices framework and ecosystem for building cloud-native services.,366,95,0.26,243,0.664,-1,-0.003,2018,Yes
+IMPALA,Apache Impala,Massively parallel SQL query engine for data stored in Hadoop and related systems.,1083,1051,0.97,736,0.68,-1,-0.001,2017,Yes
+FINERACT,Apache Fineract,"Open platform for core banking, lending, and financial services.",353,330,0.935,99,0.28,-1,-0.003,2017,Yes
+GUACAMOLE,Apache Guacamole,"Clientless remote desktop gateway supporting protocols such as RDP, VNC, and SSH.",261,252,0.966,217,0.831,-1,-0.004,2016,Yes
+BEAM,Apache Beam,Unified programming model for defining batch and stream data processing pipelines.,339,306,0.903,339,1,-1,-0.003,2016,Yes
+ARROW,Apache Arrow,Cross-language in-memory columnar format and libraries for analytics.,1484,1308,0.881,1457,0.982,-1,-0.001,2016,Yes
+GEODE,Apache Geode,"Distributed in-memory data management platform for low-latency, scalable applications.",248,246,0.992,161,0.649,-1,-0.004,2015,Yes
+TINKERPOP,Apache TinkerPop,Graph computing framework and interfaces for graph databases and graph analytics.,294,291,0.99,284,0.966,-1,-0.003,2015,Yes
+SYNCOPE,Apache Syncope,"Open-source identity and access management platform for users, groups, and entitlements.",138,135,0.978,131,0.949,-1,-0.007,2015,Yes
+KUDU,Apache Kudu,Distributed columnar storage engine optimized for fast analytics on rapidly changing data.,140,136,0.971,67,0.479,-1,-0.007,2015,Yes
+IGNITE,Apache Ignite,"Distributed database, caching, and compute platform for large-scale applications.",5827,5547,0.952,2365,0.406,-1,0,2015,Yes
+GROOVY,Apache Groovy,"Agile, dynamic programming language for the Java platform.",244,224,0.918,117,0.48,-1,-0.004,2015,Yes
+ATLAS,Apache Atlas,Metadata management and data governance platform for data ecosystems.,192,176,0.917,126,0.656,-1,-0.005,2015,Yes
+JCRVLT,Apache Jackrabbit FileVault,"Tooling for packaging, importing, and exporting JCR repository content.",133,122,0.917,90,0.677,-1,-0.008,2015,Yes
+ARTEMIS,Apache ActiveMQ Artemis,"High-performance, multi-protocol message broker.",484,407,0.841,215,0.444,-1,-0.002,2015,Yes
+KYLIN,Apache Kylin,Distributed analytics engine and data warehouse for OLAP on big data.,354,250,0.706,196,0.554,-1,-0.003,2015,Yes
+PARQUET,Apache Parquet,Columnar storage file format optimized for analytical workloads.,252,166,0.659,168,0.667,-1,-0.004,2015,Yes
+ORC,Apache ORC,Columnar file format for Hadoop workloads with compression and predicate pushdown.,323,137,0.424,245,0.759,-1,-0.003,2015,Yes
+CALCITE,Apache Calcite,"Dynamic data management framework for query parsing, planning, optimization, and federation.",830,798,0.961,539,0.649,-1,-0.001,2014,Yes
+RANGER,Apache Ranger,"Centralized security administration, authorization, and auditing for data platforms.",622,595,0.957,622,1,-1,-0.002,2014,Yes
+NIFI,Apache NiFi,System for automating and managing data flows between systems.,3114,2975,0.955,1656,0.532,-1,0,2014,Yes
+PHOENIX,Apache Phoenix,SQL skin over HBase for low-latency relational queries on NoSQL data.,394,361,0.916,153,0.388,-1,-0.003,2014,Yes
+PROTON,Apache Qpid Proton,Messaging libraries and engine for AMQP-based applications.,142,130,0.915,131,0.923,-1,-0.007,2014,Yes
+FLINK,Apache Flink,Engine for stateful stream processing and batch data processing.,4280,3894,0.91,3961,0.925,-1,0,2014,Yes
+TEZ,Apache Tez,Application framework for executing complex directed acyclic graphs of tasks on YARN.,133,109,0.82,2,0.015,-1,-0.008,2014,Yes
+ZEPPELIN,Apache Zeppelin,Web-based notebook for interactive data analytics and visualization.,282,227,0.805,120,0.426,-1,-0.004,2014,Yes
+AMBARI,Apache Ambari,"Provisioning, managing, and monitoring Hadoop clusters and services.",317,219,0.691,71,0.224,-1,-0.003,2014,Yes
+SPARK,Apache Spark,Unified analytics engine for large-scale data processing and machine learning.,5144,3218,0.626,5144,1,-1,0,2014,Yes
+KNOX,Apache Knox,Application gateway for secure access to Hadoop and related REST APIs.,190,178,0.937,138,0.726,-1,-0.005,2013,Yes
+LOG4J2,Apache Log4j 2,Logging framework for Java applications with flexible configuration and performance features.,100,98,0.98,77,0.77,-1,-0.01,2012,Yes
+YARN,Apache Hadoop YARN,Cluster resource management and scheduling layer in the Hadoop ecosystem.,289,272,0.941,223,0.772,-1,-0.003,2012,Yes
+DRILL,Apache Drill,"Distributed, schema-free SQL query engine for large-scale data exploration.",187,175,0.936,121,0.647,-1,-0.005,2012,Yes
+OAK,Apache Jackrabbit Oak,Scalable content repository for hierarchical and unstructured content.,645,487,0.755,540,0.837,-1,-0.002,2012,Yes
+BIGTOP,Apache Bigtop,"Project for packaging, testing, and interoperability of big data components.",259,156,0.602,88,0.34,-1,-0.004,2012,Yes
+KAFKA,Apache Kafka,"Distributed event streaming platform for high-throughput messaging, storage, and stream processing.",1656,1589,0.96,824,0.498,-1,-0.001,2011,Yes
+OPENNLP,Apache OpenNLP,Machine learning based toolkit for natural language processing tasks.,143,137,0.958,92,0.643,-1,-0.007,2011,Yes
+CASSANDRA,Apache Cassandra,Highly scalable distributed NoSQL database designed for high availability.,1275,1206,0.946,1131,0.887,-1,-0.001,2010,Yes
+TIKA,Apache Tika,"Toolkit for content detection, metadata extraction, and text extraction from documents.",209,189,0.904,87,0.416,-1,-0.005,2010,Yes
+HIVE,Apache Hive,Data warehouse and SQL engine for querying and managing large datasets.,1264,1101,0.871,628,0.497,-1,-0.001,2010,Yes
+ZOOKEEPER,Apache ZooKeeper,"Distributed coordination service for configuration, naming, and synchronization.",200,170,0.85,137,0.685,-1,-0.005,2010,Yes
+CAUSEWAY,Apache Causeway,Framework that generates business applications and REST APIs from a domain model.,502,406,0.809,425,0.847,-1,-0.002,2010,Yes
+AVRO,Apache Avro,Data serialization system with schemas and RPC support for data exchange.,443,422,0.953,373,0.842,-1,-0.002,2009,Yes
+HBASE,Apache HBase,"Distributed, scalable wide-column NoSQL database built on top of Hadoop storage.",900,872,0.969,557,0.619,-1,-0.001,2008,Yes
+SLING,Apache Sling,Content-centric web framework built on a JCR content repository.,983,911,0.927,824,0.838,-1,-0.001,2008,Yes
+PDFBOX,Apache PDFBox,"Java library for creating, manipulating, and extracting content from PDF documents.",196,180,0.918,147,0.75,-1,-0.005,2008,Yes
+THRIFT,Apache Thrift,Cross-language RPC and data serialization framework.,170,147,0.865,170,1,-1,-0.006,2008,Yes
+CXF,Apache CXF,Services framework for building web services and service-oriented applications.,136,129,0.949,56,0.412,-1,-0.007,2007,Yes
+WICKET,Apache Wicket,Component-oriented Java web application framework.,109,103,0.945,68,0.624,-1,-0.009,2007,Yes
+CAMEL,Apache Camel,"Integration framework for connecting systems using routes, patterns, and connectors.",2469,2228,0.902,2138,0.866,-1,0,2007,Yes
+AMQ,Apache ActiveMQ Classic,Open-source message broker supporting JMS and multiple messaging protocols.,149,130,0.872,65,0.436,-1,-0.007,2007,Yes
+FELIX,Apache Felix,OSGi framework and related components for modular Java applications.,176,151,0.858,172,0.977,-1,-0.006,2007,Yes
+SOLR,Apache Solr,"Search server built on Lucene for full-text search, indexing, and search applications.",732,723,0.988,429,0.586,-1,-0.001,2006,Yes
+OFBIZ,Apache OFBiz,"Suite of business applications and framework components for ERP, CRM, e-commerce, and automation.",337,326,0.967,299,0.887,-1,-0.003,2006,Yes
+HADOOP,Apache Hadoop,Framework for distributed storage and large-scale data processing.,545,503,0.923,437,0.802,-1,-0.002,2006,Yes
+HDFS,Apache Hadoop HDFS,"Distributed file system designed for reliable, scalable storage on commodity hardware.",694,633,0.912,527,0.759,-1,-0.001,2006,Yes
+TOBAGO,Apache MyFaces Tobago,Component library for Jakarta Faces/JSF web applications.,113,96,0.85,100,0.885,-1,-0.009,2006,Yes
+SUREFIRE,Apache Maven Surefire,Plugins and shared code for running tests in Maven builds.,100,89,0.89,62,0.62,-1,-0.01,2004,Yes
+MSHARED,Apache Maven Shared Components,Shared libraries and reusable components used across Maven projects.,100,84,0.84,96,0.96,-1,-0.01,2004,Yes
+MNG,Apache Maven,Build automation and project management tool centered on declarative build configuration.,414,368,0.889,227,0.548,-1,-0.002,2003,Yes
+JAMES,Apache James,Mail server platform for creating and running enterprise email solutions in Java.,287,286,0.997,188,0.655,-1,-0.003,2002,Yes
+LUCENE,Apache Lucene,High-performance text search library for indexing and searching structured and unstructured content.,165,163,0.988,67,0.406,-1,-0.006,2001,Yes
+WW,Apache Struts,MVC framework for building Java web applications with extensible plugins.,180,146,0.811,154,0.856,-1,-0.006,2001,Yes
