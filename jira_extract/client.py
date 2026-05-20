@@ -7,6 +7,7 @@ and unified exponential backoff retry logic for sequential requests.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any, Dict, Optional
@@ -55,6 +56,8 @@ class JiraClient:
                     continue
 
                 self.logger.error("HTTP %d (not retrying): %s", resp.status_code, url)
+                if method.upper() == "POST" and "json" in kwargs:
+                    self.logger.debug("POST payload: %s", json.dumps(kwargs["json"], ensure_ascii=False))
                 return None
 
             except Exception as exc:

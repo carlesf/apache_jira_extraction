@@ -29,6 +29,8 @@ Usage:
 ----------------------------------------------------------------------------
 """
 
+from __future__ import annotations
+
 import argparse
 import atexit
 import csv
@@ -181,4 +183,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
