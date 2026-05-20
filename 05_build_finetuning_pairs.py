@@ -82,6 +82,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Set
 
+from jira_extract.utils import parse_jira_timestamp
 
 CLEAN_DIR  = "./extract_out/clean"
 OUT_DIR    = "./extract_out/dataset"
@@ -149,15 +150,6 @@ def is_completed(record: dict) -> bool:
     )
 
 
-def _parse_jira_timestamp(value) -> Optional[datetime]:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("+0000", "+00:00"))
-    except ValueError:
-        return None
-
-
 def decomposition_level(parent: dict) -> str:
     return "epic_to_feature" if parent.get("type") == "Epic" else "feature_to_task"
 
@@ -191,11 +183,11 @@ def quality_score(parent: dict, children: List[dict]) -> int:
     if child_count and described_children * 2 >= child_count:
         score += 1
 
-    parent_created = _parse_jira_timestamp(parent.get("created_at"))
+    parent_created = parse_jira_timestamp(parent.get("created_at"))
     comparable_child_dates = []
     if parent_created is not None:
         for child in children:
-            child_created = _parse_jira_timestamp(child.get("created_at"))
+            child_created = parse_jira_timestamp(child.get("created_at"))
             if child_created is not None:
                 comparable_child_dates.append(child_created)
     if comparable_child_dates and all(child_created >= parent_created for child_created in comparable_child_dates):

@@ -29,9 +29,8 @@ Usage:
 ----------------------------------------------------------------------------
 """
 
-from __future__ import annotations
-
 import argparse
+import atexit
 import json
 import logging
 import os
@@ -39,13 +38,12 @@ import time
 from typing import Dict, List, Optional, Set
 from urllib.parse import quote
 
-import requests
+from jira_extract import config
+from jira_extract.client import JiraClient
 
-BASE_URL = "https://issues.apache.org/jira"
-# Requirement types only for Pass 1; Pass 2 fetches children with no type filter
-TYPE_FILTER = 'issuetype in (Story, "New Feature", Improvement, Epic)'
-MAX_RETRIES = 5
 EPIC_LINK_BATCH_SIZE = 25
+
+client: Optional[JiraClient] = None
 
 
 def setup_logging(log_file: str) -> logging.Logger:
@@ -64,73 +62,12 @@ def setup_logging(log_file: str) -> logging.Logger:
     return logger
 
 
-def get_jira_json(url: str, logger: logging.Logger, delay_s: float) -> Optional[dict]:
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.get(url, timeout=60)
-
-            if resp.status_code == 200:
-                return resp.json()
-
-            if resp.status_code == 404:
-                logger.warning("404 (issue unavailable or deleted): %s", url)
-                return None
-
-            if resp.status_code in (429, 502, 503, 504):
-                wait = min(60, 2 ** attempt)
-                logger.warning("HTTP %d on attempt %d. Waiting %ds.", resp.status_code, attempt, wait)
-                time.sleep(wait)
-                continue
-
-            logger.error("HTTP %d (not retrying): %s", resp.status_code, url)
-            return None
-
-        except Exception as exc:
-            wait = min(60, 2 ** attempt)
-            logger.warning("Exception on attempt %d: %s. Waiting %ds.", attempt, exc, wait)
-            time.sleep(wait)
-
-    logger.error("Max retries exceeded: %s", url)
-    return None
-
-
-def post_jira_json(url: str, payload: Dict, logger: logging.Logger, delay_s: float) -> Optional[dict]:
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.post(url, json=payload, timeout=60)
-
-            if resp.status_code == 200:
-                return resp.json()
-
-            if resp.status_code == 404:
-                logger.warning("404 (resource unavailable or deleted): %s", url)
-                return None
-
-            if resp.status_code in (429, 502, 503, 504):
-                wait = min(60, 2 ** attempt)
-                logger.warning("HTTP %d on attempt %d. Waiting %ds.", resp.status_code, attempt, wait)
-                time.sleep(wait)
-                continue
-
-            logger.error("HTTP %d (not retrying): %s", resp.status_code, url)
-            logger.debug("POST payload: %s", json.dumps(payload, ensure_ascii=False))
-            return None
-
-        except Exception as exc:
-            wait = min(60, 2 ** attempt)
-            logger.warning("Exception on attempt %d: %s. Waiting %ds.", attempt, exc, wait)
-            time.sleep(wait)
-
-    logger.error("Max retries exceeded: %s", url)
-    return None
-
-
 def enumerate_requirement_keys(project: str, from_date: str, to_date: str,
                                batch_size: int, delay_s: float,
                                logger: logging.Logger) -> List[str]:
     jql = (
         f'project = {project} AND created >= "{from_date}" AND created < "{to_date}"'
-        f" AND {TYPE_FILTER} ORDER BY created ASC"
+        f" AND {config.TYPE_FILTER} ORDER BY created ASC"
     )
     encoded = quote(jql)
 
@@ -143,10 +80,10 @@ def enumerate_requirement_keys(project: str, from_date: str, to_date: str,
 
     while True:
         url = (
-            f"{BASE_URL}/rest/api/2/search"
+            f"rest/api/2/search"
             f"?jql={encoded}&fields=key&maxResults={batch_size}&startAt={start_at}"
         )
-        page = get_jira_json(url, logger, delay_s)
+        page = client.get(url)
         if page is None:
             break
 
@@ -243,7 +180,7 @@ def search_epic_link_child_keys(project: str, epic_keys: Set[str],
     Uses POST and small Epic-key batches to avoid long GET URLs.
     """
     child_keys: Set[str] = set()
-    search_url = f"{BASE_URL}/rest/api/2/search"
+    search_url = "rest/api/2/search"
     sorted_epics = sorted(epic_keys)
 
     if not sorted_epics:
@@ -268,7 +205,7 @@ def search_epic_link_child_keys(project: str, epic_keys: Set[str],
                 "maxResults": search_batch_size,
                 "startAt": start_at,
             }
-            page = post_jira_json(search_url, payload, logger, delay_s)
+            page = client.post(search_url, payload)
             if page is None:
                 sample = ", ".join(epic_batch[:3])
                 suffix = "..." if len(epic_batch) > 3 else ""
@@ -302,8 +239,8 @@ def search_epic_link_child_keys(project: str, epic_keys: Set[str],
 
 
 def fetch_issue(key: str, out_dir: str, delay_s: float, logger: logging.Logger) -> bool:
-    url = f"{BASE_URL}/rest/api/2/issue/{key}?expand=changelog"
-    issue = get_jira_json(url, logger, delay_s)
+    url = f"rest/api/2/issue/{key}?expand=changelog"
+    issue = client.get(url)
     if issue is None:
         return False
 
@@ -314,8 +251,8 @@ def fetch_issue(key: str, out_dir: str, delay_s: float, logger: logging.Logger) 
         ch_start = changelog.get("maxResults", 100)
 
         while ch_start < changelog["total"]:
-            ch_url = f"{BASE_URL}/rest/api/2/issue/{key}/changelog?startAt={ch_start}"
-            ch_page = get_jira_json(ch_url, logger, delay_s)
+            ch_url = f"rest/api/2/issue/{key}/changelog?startAt={ch_start}"
+            ch_page = client.get(ch_url)
             if ch_page is None:
                 break
             histories.extend(ch_page.get("values", []))
@@ -388,6 +325,10 @@ def main() -> None:
     os.makedirs(out_dir, exist_ok=True)
     logger = setup_logging(log_file)
 
+    global client
+    client = JiraClient(logger=logger)
+    atexit.register(client.close)
+
     # Load checkpoint (shared across all passes).
     done: Set[str] = set()
     if os.path.exists(chk_file):
@@ -449,3 +390,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

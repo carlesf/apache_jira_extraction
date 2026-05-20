@@ -33,13 +33,7 @@ import sys
 from datetime import datetime, timezone
 from typing import List, Optional
 
-
-def _parse_dt(s: str) -> datetime:
-    s = s.replace("+0000", "+00:00")
-    try:
-        return datetime.fromisoformat(s)
-    except ValueError:
-        return datetime.min.replace(tzinfo=timezone.utc)
+from jira_extract.utils import parse_jira_timestamp_utc
 
 
 def get_value_at_creation(issue: dict, field_name: str, current_value) -> object:
@@ -51,7 +45,7 @@ def get_value_at_creation(issue: dict, field_name: str, current_value) -> object
     for history in changelog.get("histories", []):
         for item in history.get("items", []):
             if item.get("field") == field_name or item.get("fieldId") == field_name:
-                created = _parse_dt(history["created"])
+                created = parse_jira_timestamp_utc(history["created"])
                 if oldest_created is None or created < oldest_created:
                     oldest_created = created
                     oldest_from = item.get("fromString")
@@ -88,7 +82,7 @@ def extract_status_history(issue: dict) -> List[dict]:
                     "changed_at":  changed_at,
                 })
 
-    return sorted(transitions, key=lambda t: _parse_dt(t.get("changed_at") or ""))
+    return sorted(transitions, key=lambda t: parse_jira_timestamp_utc(t.get("changed_at") or ""))
 
 
 def get_initial_status(current_status: Optional[str], status_history: List[dict]) -> Optional[str]:

@@ -29,34 +29,30 @@ Usage:
 ----------------------------------------------------------------------------
 """
 
-from __future__ import annotations
-
 import argparse
+import atexit
 import csv
 import os
 import time
 from urllib.parse import quote
 
-import requests
+from jira_extract import config
+from jira_extract.client import JiraClient
 
-BASE_URL = "https://issues.apache.org/jira"
-OUT_DIR  = "./extract_out"
-OUT_FILE = os.path.join(OUT_DIR, "project_coverage.csv")
+OUT_FILE = os.path.join(config.OUT_DIR, "project_coverage.csv")
 
-FROM_DATE = "2022-01-01"
-TO_DATE   = "2026-01-01"   # exclusive upper bound, covers through end of 2025
-
-# Requirement-type issues only; excludes Bug and Task
-TYPE_FILTER = 'issuetype in (Story, "New Feature", Improvement, Epic)'
+client = JiraClient()
+atexit.register(client.close)
 
 
 def get_count(jql: str, delay_s: float) -> int:
     encoded = quote(jql)
-    url = f"{BASE_URL}/rest/api/2/search?jql={encoded}&maxResults=0"
+    path = f"rest/api/2/search?jql={encoded}&maxResults=0"
     try:
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-        return int(resp.json().get("total", -1))
+        resp = client.get(path)
+        if resp is None:
+            return -1
+        return int(resp.get("total", -1))
     except Exception:
         return -1
     finally:
@@ -65,13 +61,14 @@ def get_count(jql: str, delay_s: float) -> int:
 
 def fetch_all_project_keys() -> list[str]:
     """Return every project key available on the Jira instance."""
-    resp = requests.get(f"{BASE_URL}/rest/api/2/project", timeout=30)
-    resp.raise_for_status()
-    return [p["key"] for p in resp.json()]
+    resp = client.get("rest/api/2/project")
+    if not resp:
+        raise RuntimeError("Failed to fetch project list from JIRA.")
+    return [p["key"] for p in resp]
 
 
 def discover_active_projects(all_keys: list[str], min_issues: int,
-                             delay_s: float) -> list[tuple[str, int]]:
+                              delay_s: float) -> list[tuple[str, int]]:
     """
     Filter project keys to those with at least min_issues requirement issues
     in the target window. Returns list of (key, total) sorted by total desc.
@@ -81,8 +78,8 @@ def discover_active_projects(all_keys: list[str], min_issues: int,
     for i, key in enumerate(all_keys, start=1):
         jql = (
             f'project = "{key}"'
-            f' AND created >= "{FROM_DATE}" AND created < "{TO_DATE}"'
-            f" AND {TYPE_FILTER}"
+            f' AND created >= "{config.FROM_DATE}" AND created < "{config.TO_DATE}"'
+            f" AND {config.TYPE_FILTER}"
         )
         total = get_count(jql, delay_s)
         if total >= min_issues:
@@ -100,8 +97,8 @@ def discover_active_projects(all_keys: list[str], min_issues: int,
 def measure_coverage(project: str, total: int, delay_s: float) -> dict:
     base = (
         f'project = "{project}"'
-        f' AND created >= "{FROM_DATE}" AND created < "{TO_DATE}"'
-        f" AND {TYPE_FILTER}"
+        f' AND created >= "{config.FROM_DATE}" AND created < "{config.TO_DATE}"'
+        f" AND {config.TYPE_FILTER}"
     )
 
     desc   = get_count(f"{base} AND description is not EMPTY", delay_s)
@@ -139,13 +136,13 @@ def main() -> None:
     args = parser.parse_args()
     delay_s = args.delay_ms / 1000.0
 
-    os.makedirs(OUT_DIR, exist_ok=True)
+    os.makedirs(config.OUT_DIR, exist_ok=True)
 
     # Phase 1: discover all projects and filter by activity.
-    print(f"Fetching project list from {BASE_URL} ...")
+    print(f"Fetching project list from {config.BASE_URL} ...")
     all_keys = fetch_all_project_keys()
     print(f"Found {len(all_keys)} projects. Filtering to those with >= {args.min_issues} "
-          f"requirement issues in {FROM_DATE} .. {TO_DATE} ...\n")
+          f"requirement issues in {config.FROM_DATE} .. {config.TO_DATE} ...\n")
 
     active = discover_active_projects(all_keys, args.min_issues, delay_s)
     print(f"\n{len(active)} projects passed the activity filter.\n")
@@ -184,3 +181,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
